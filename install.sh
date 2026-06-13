@@ -127,11 +127,7 @@ for candidate in "/root/s3_config.json" "$SCRIPT_DIR/s3_config.json" "/root/ninj
 done
 
 if [[ "$S3_CONFIG_FOUND" != "true" ]]; then
-    echo "  ✗ s3_config.json not found — cannot configure Slack"
-    echo "    Create s3_config.json (at repo root or /root/) with:"
-    echo "      aws_access_key_id, aws_secret_access_key, bucket_name"
-    echo "    Then re-run: $0 --channel '$SLACK_CHANNEL'"
-    exit 1
+    echo "  ⚠ s3_config.json not found — skipping Slack config (Teams mode)"
 fi
 
 python "$SCRIPT_DIR/teams_interface.py" config --set-team-id "$TEAMS_ID" --set-channel-id "$CHANNEL_ID"
