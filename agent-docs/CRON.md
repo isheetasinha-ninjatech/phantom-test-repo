@@ -1,6 +1,6 @@
 # Cron — Scheduled Agent Prompts
 
-Ninja can run recurring agent prompts on a schedule. Cron jobs flow
+Phantom can run recurring agent prompts on a schedule. Cron jobs flow
 through the **same monitor batch path** as Slack mentions, so the agent
 responds to scheduled jobs the same way it responds to user messages —
 just with `type: cron` instead of `type: mention`.
@@ -15,7 +15,7 @@ just with `type: cron` instead of `type: mention`.
 - "Check the deploy queue every 30 minutes."
 - "Post a weekly report on Mondays."
 
-Schedules evaluate in **system local time**, which Ninja sets from the
+Schedules evaluate in **system local time**, which Phantom sets from the
 customer's Slack workspace timezone. So `0 9 * * *` means 9am for the
 customer, not 9am UTC.
 
@@ -78,7 +78,7 @@ Examples:
 
 ## Job storage
 
-Jobs live in `.ninja_crons.json` next to `monitor.py`. The file is
+Jobs live in `.phantom_crons.json` next to `monitor.py`. The file is
 **gitignored** — it is per-installation runtime state. Schema:
 
 ```json
@@ -97,7 +97,7 @@ Jobs live in `.ninja_crons.json` next to `monitor.py`. The file is
 
 ## How it executes
 
-1. `ninja-monitor.service` ticks every ~45s and calls
+1. `phantom-monitor.service` ticks every ~45s and calls
    `cron_scheduler.get_due_cron_messages()`.
 2. For each due job, the monitor calls `claim_cron(id)` which advances
    `next_run_at` **before** the agent runs (restart-safe).
@@ -116,7 +116,7 @@ self-directed task, not a user question:
 - Execute the `prompt` exactly.
 - Post the result with `python slack_interface.py say "..."`. If the
   job has `thread_ts` set, reply in-thread with `-t <thread_ts>`.
-  Ninja has only one configured Slack channel, so no `-c` flag is
+  Phantom has only one configured Slack channel, so no `-c` flag is
   needed.
 - Keep output concise — same tone rules as `MONITOR.md`.
 - Do **not** ask for confirmation. The schedule is the consent.
@@ -127,5 +127,5 @@ self-directed task, not a user question:
 - No conditional / dependency-gated runs (deferred).
 - No script-only crons (deferred — use the agent prompt instead).
 - No web dashboard. Manage with the CLI.
-- Single Ninja monitor process assumed; multi-worker locking would
+- Single Phantom monitor process assumed; multi-worker locking would
   need a real DB.

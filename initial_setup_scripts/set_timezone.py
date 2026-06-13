@@ -5,7 +5,7 @@ set_timezone.py
 
 Detect the Slack user's IANA timezone and apply it as the Linux system
 timezone. Intended to be run once, early in a sandbox's lifecycle
-(alongside the other Ninja bootstrap steps), so all subsequent
+(alongside the other Phantom bootstrap steps), so all subsequent
 timestamps — logs, scheduled jobs, Slack messages, GitHub commits —
 line up with the operator's local time.
 
@@ -13,7 +13,7 @@ How it works
 ------------
 
 1. Reads the Slack user token from ``/dev/shm/mcp-token`` (the same
-   file Ninja already consumes for its GitHub + Slack secrets).
+   file Phantom already consumes for its GitHub + Slack secrets).
 2. Calls Slack's ``auth.test`` to resolve the caller's ``user_id``.
 3. Calls ``users.info`` to read ``tz`` (IANA zone, e.g.
    ``Australia/Canberra``), ``tz_label`` and ``tz_offset``.
@@ -31,11 +31,11 @@ CLI
 
 ::
 
-    python src/ninja/initial_setup_scripts/set_timezone.py           # detect + apply
-    python src/ninja/initial_setup_scripts/set_timezone.py --dry-run # detect only, don't touch the system
-    python src/ninja/initial_setup_scripts/set_timezone.py --timezone Europe/Berlin
+    python src/phantom/initial_setup_scripts/set_timezone.py           # detect + apply
+    python src/phantom/initial_setup_scripts/set_timezone.py --dry-run # detect only, don't touch the system
+    python src/phantom/initial_setup_scripts/set_timezone.py --timezone Europe/Berlin
                                                            # override detection
-    python src/ninja/initial_setup_scripts/set_timezone.py --quiet   # minimal output
+    python src/phantom/initial_setup_scripts/set_timezone.py --quiet   # minimal output
 
 Exit codes
 ----------
@@ -70,7 +70,7 @@ SLACK_API = "https://slack.com/api"
 # ---------------------------------------------------------------------------
 # Slack token + API helpers (kept inline so this script has no dependencies
 # beyond Python's stdlib — bootstrap scripts must be runnable before the
-# Ninja package itself is installed).
+# Phantom package itself is installed).
 # ---------------------------------------------------------------------------
 
 
@@ -267,7 +267,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="set_timezone.py",
         description=(
             "Detect the Slack user's timezone and apply it as the Linux "
-            "system timezone. Part of the Ninja initial-setup bootstrap."
+            "system timezone. Part of the Phantom initial-setup bootstrap."
         ),
     )
     p.add_argument(

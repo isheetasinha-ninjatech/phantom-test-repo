@@ -17,7 +17,7 @@ from __future__ import annotations
 import io
 import json
 
-# Make ``src/ninja`` importable as a package root: tests/.. == src/ninja
+# Make ``src/phantom`` importable as a package root: tests/.. == src/phantom
 import os
 import sys
 import unittest
@@ -26,9 +26,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from unittest import mock
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_NINJA_ROOT = os.path.dirname(_HERE)
-if _NINJA_ROOT not in sys.path:
-    sys.path.insert(0, _NINJA_ROOT)
+_PHANTOM_ROOT = os.path.dirname(_HERE)
+if _PHANTOM_ROOT not in sys.path:
+    sys.path.insert(0, _PHANTOM_ROOT)
 
 from tools import pdx  # noqa: E402  (after sys.path tweak)
 from utils.pipedream_proxy import ProxyResponse  # noqa: E402

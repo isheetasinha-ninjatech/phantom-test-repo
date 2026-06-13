@@ -2,11 +2,11 @@
 Unit tests for utils.pipedream_proxy.
 
 Run:
-    PYTHONPATH=src/ninja python3 -m unittest \
-        src.ninja.tests.test_pipedream_proxy
+    PYTHONPATH=src/phantom python3 -m unittest \
+        src.phantom.tests.test_pipedream_proxy
 
 Or from the project root:
-    cd src/ninja && PYTHONPATH=. python3 -m unittest tests.test_pipedream_proxy -v
+    cd src/phantom && PYTHONPATH=. python3 -m unittest tests.test_pipedream_proxy -v
 """
 
 from __future__ import annotations

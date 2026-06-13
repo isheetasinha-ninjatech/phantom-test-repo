@@ -7,9 +7,9 @@ import sys
 import unittest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_NINJA_ROOT = os.path.dirname(_HERE)
-if _NINJA_ROOT not in sys.path:
-    sys.path.insert(0, _NINJA_ROOT)
+_PHANTOM_ROOT = os.path.dirname(_HERE)
+if _PHANTOM_ROOT not in sys.path:
+    sys.path.insert(0, _PHANTOM_ROOT)
 
 from slack_md_blocks import md_to_slack_blocks  # noqa: E402
 

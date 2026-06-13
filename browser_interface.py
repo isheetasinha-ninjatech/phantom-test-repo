@@ -40,7 +40,7 @@ def _get_stealth_js():
     global _stealth_js
     if _stealth_js is None:
         try:
-            from ninja.stealth import STEALTH_JS
+            from phantom.stealth import STEALTH_JS
 
             _stealth_js = STEALTH_JS
         except ImportError:
@@ -252,7 +252,7 @@ class BrowserInterface:
     ):
         """Connect to an already-running Chromium via Chrome DevTools Protocol.
 
-        This is the preferred way to use the browser in Ninja tasks.
+        This is the preferred way to use the browser in Phantom tasks.
         The browser process persists across tasks -- tabs, cookies, and state
         are preserved between runs.
 
@@ -276,7 +276,7 @@ class BrowserInterface:
         except Exception as e:
             raise ConnectionError(
                 f"No browser found at {endpoint}. "
-                f"Start one with: python ninja/browser_server.py start"
+                f"Start one with: python phantom/browser_server.py start"
             ) from e
 
         inst = cls.__new__(cls)
@@ -397,7 +397,7 @@ class BrowserInterface:
 
         Returns dict with: webdriver, webdriverType, chromeRuntime, plugins, languages.
         """
-        from ninja.stealth import check_stealth
+        from phantom.stealth import check_stealth
 
         return check_stealth(self)
 
@@ -410,7 +410,7 @@ class BrowserInterface:
 
         Returns dict with: valid (bool), cookies_found (list), login_url (str), etc.
         """
-        from ninja.session_health import check_session
+        from phantom.session_health import check_session
 
         return check_session(service)
 
@@ -419,13 +419,13 @@ class BrowserInterface:
 
         Returns dict mapping service name → check result.
         """
-        from ninja.session_health import check_all_sessions
+        from phantom.session_health import check_all_sessions
 
         return check_all_sessions()
 
     def vnc_url(self) -> str:
         """Get the VNC URL for manual browser login."""
-        from ninja.session_health import get_vnc_url
+        from phantom.session_health import get_vnc_url
 
         return get_vnc_url()
 

@@ -1,7 +1,7 @@
 """
 Unit tests for utils.pdx_action_map.
 
-Run from `src/ninja`:
+Run from `src/phantom`:
     PYTHONPATH=. python3 -m unittest tests.test_pdx_action_map -v
 """
 

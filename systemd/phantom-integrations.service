@@ -1,0 +1,23 @@
+[Unit]
+Description=Phantom Integrations Dashboard
+Documentation=https://github.com/NinjaTech-AI/phantom
+After=network.target supervisor.service phantom.service
+Wants=phantom.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/workspace/phantom/dashboard
+ExecStart=/usr/local/bin/python integrations_app.py
+Restart=on-failure
+RestartSec=10s
+
+Environment=HOME=/root
+Environment=INTEGRATIONS_PORT=9020
+Environment=PYTHONPATH=/workspace/phantom/src/phantom:/workspace/phantom
+StandardOutput=append:/workspace/logs/phantom-integrations.log
+StandardError=append:/workspace/logs/phantom-integrations.log
+SyslogIdentifier=phantom-integrations
+
+[Install]
+WantedBy=multi-user.target

@@ -30,8 +30,8 @@ from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SESSIONS_DIR = REPO_ROOT / "ninja" / "sessions"
-BROWSER_DATA_DIR = REPO_ROOT / "ninja" / "browser_data"
+SESSIONS_DIR = REPO_ROOT / "phantom" / "sessions"
+BROWSER_DATA_DIR = REPO_ROOT / "phantom" / "browser_data"
 COOKIES_DB = BROWSER_DATA_DIR / "Default" / "Cookies"
 
 

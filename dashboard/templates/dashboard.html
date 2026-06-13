@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ninja — Agent Dashboard</title>
+    <title>Phantom — Agent Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -501,7 +501,7 @@
             try {
                 const r = await fetch('/api/agent');
                 const d = await r.json();
-                document.getElementById('agentName').textContent = d.name || 'Ninja';
+                document.getElementById('agentName').textContent = d.name || 'Phantom';
                 document.getElementById('agentRole').textContent = d.role || '';
                 const avatarUrl = d.avatar || d.icon_url || '';
                 if (avatarUrl) document.getElementById('agentAvatar').src = avatarUrl;

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ninja Agent Dashboard
+Phantom Agent Dashboard
 Combines agent identity, real-time logs, and Claude Code monitor data
 in a single Flask application (no separate claude_monitor process needed).
 """
@@ -31,14 +31,14 @@ def _find_project_root() -> Path:
         if child.is_dir() and (child / "orchestrator.py").exists():
             return child
     # Fallback
-    return Path("/workspace/ninja")
+    return Path("/workspace/phantom")
 
 
 NINJA_SQUAD_DIR = _find_project_root()
 
 LOGS_DIR = Path("/workspace/logs")
 AVATAR_BASE_URL = (
-    "https://sites.super.betamyninja.ai/03e7e7b7-929a-4476-a11d-d7acad3951a4/a90f52f3"
+    "https://sites.super.betamyninja.ai/44664728-914e-4c05-bdf2-d171ad4edcb3/82c331aa"
 )
 
 # Claude session data
@@ -47,12 +47,12 @@ CACHE_TTL = 10  # seconds
 
 # Agent definitions
 AGENTS = {
-    "ninja": {
-        "name": "Ninja",
+    "phantom": {
+        "name": "Phantom",
         "role": "Browser Automation Agent",
         "emoji": "\U0001f47b",
-        "color": "#38bdf8",
-        "icon_url": f"{AVATAR_BASE_URL}/ninja.png",
+        "color": "#8b5cf6",
+        "icon_url": f"{AVATAR_BASE_URL}/phantom.png",
     },
 }
 
@@ -65,14 +65,14 @@ def get_agent_info():
     try:
         with open(AGENT_SETTINGS_FILE) as f:
             settings = json.load(f)
-        agent_id = settings.get("default_agent", "ninja")
-        agent = AGENTS.get(agent_id, AGENTS["ninja"]).copy()
+        agent_id = settings.get("default_agent", "phantom")
+        agent = AGENTS.get(agent_id, AGENTS["phantom"]).copy()
         agent["id"] = agent_id
         agent["channel"] = settings.get("default_channel", "")
         agent["workspace"] = settings.get("workspace", "")
         return agent
     except Exception:
-        return {**AGENTS["ninja"], "id": "ninja", "channel": "", "workspace": ""}
+        return {**AGENTS["phantom"], "id": "phantom", "channel": "", "workspace": ""}
 
 
 # ---------------------------------------------------------------------------
@@ -545,7 +545,7 @@ def api_claude_prompts():
 # Main
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    print("\U0001f680 Starting Ninja Agent Dashboard...")
+    print("\U0001f680 Starting Phantom Agent Dashboard...")
     agent = get_agent_info()
     print(f"   Agent: {agent['emoji']} {agent['name']} ({agent['role']})")
     print(f"   Logs: {LOGS_DIR}")

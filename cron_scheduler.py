@@ -1,5 +1,5 @@
 """
-cron_scheduler.py — JSON-backed cron scheduler for Ninja.
+cron_scheduler.py — JSON-backed cron scheduler for Phantom.
 
 Internal library used by ``monitor.py`` to find due cron jobs and inject
 them into the existing ``pending_messages`` batch. End users / agents
@@ -8,15 +8,15 @@ should drive cron via ``tools/cron.py`` (CLI) — see
 
 Design notes
 ------------
-* Single state file at ``REPO_ROOT/.ninja_crons.json`` — gitignored.
-* Schedules are evaluated in **system local time**. Ninja now sets
+* Single state file at ``REPO_ROOT/.phantom_crons.json`` — gitignored.
+* Schedules are evaluated in **system local time**. Phantom now sets
   ``/etc/localtime`` from the customer's Slack timezone (PR #19), so a
   cron like ``"0 9 * * *"`` means 9am customer-local.
 * "Claim before run": when a job is due, we advance ``next_run_at``
   *before* the agent runs. Restart-safe; trades duplicate runs for
   occasional missed runs, which is the right default for chat agents.
-* No DB, no daemon, no external service. Ninja's existing
-  ``ninja-monitor.service`` is the tick loop.
+* No DB, no daemon, no external service. Phantom's existing
+  ``phantom-monitor.service`` is the tick loop.
 """
 
 from __future__ import annotations
@@ -33,13 +33,13 @@ try:
     from croniter import croniter
 except ImportError as e:  # pragma: no cover
     raise ImportError(
-        "croniter is required for the Ninja cron scheduler. "
+        "croniter is required for the Phantom cron scheduler. "
         "Install with: pip install croniter"
     ) from e
 
 
 REPO_ROOT = Path(__file__).parent
-CRONS_FILE = REPO_ROOT / ".ninja_crons.json"
+CRONS_FILE = REPO_ROOT / ".phantom_crons.json"
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ def save_crons(jobs: list[dict[str, Any]]) -> None:
     """Atomically persist cron jobs to disk."""
     CRONS_FILE.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(
-        prefix=".ninja_crons.", suffix=".json", dir=str(CRONS_FILE.parent)
+        prefix=".phantom_crons.", suffix=".json", dir=str(CRONS_FILE.parent)
     )
     try:
         with os.fdopen(fd, "w") as f:
@@ -87,7 +87,7 @@ def save_crons(jobs: list[dict[str, Any]]) -> None:
 def calculate_next_run(schedule: str, from_ts: float | None = None) -> float:
     """Return the next epoch-seconds at which ``schedule`` fires after ``from_ts``.
 
-    Evaluates in **system local time**. Ninja sets ``/etc/localtime``
+    Evaluates in **system local time**. Phantom sets ``/etc/localtime``
     from the customer's Slack timezone (PR #19), so a schedule like
     ``"0 9 * * *"`` means 9am customer-local, not 9am UTC.
 

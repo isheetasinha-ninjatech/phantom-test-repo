@@ -2,7 +2,7 @@
 """
 pdx — launcher shim.
 
-Finds the Ninja source tree and delegates to `tools.pdx:main`.
+Finds the Phantom source tree and delegates to `tools.pdx:main`.
 Safe to symlink into /usr/local/bin or ~/.local/bin.
 """
 from __future__ import annotations
@@ -12,9 +12,9 @@ import sys
 from pathlib import Path
 
 
-def _find_ninja_src() -> Path | None:
+def _find_phantom_src() -> Path | None:
     # 1. Explicit override
-    env = os.environ.get("NINJA_SRC")
+    env = os.environ.get("PHANTOM_SRC")
     if env and (Path(env) / "tools" / "pdx.py").exists():
         return Path(env)
 
@@ -26,19 +26,19 @@ def _find_ninja_src() -> Path | None:
 
     # 3. Common install locations
     for p in [
-        Path("/workspace/ninja/src/ninja"),
-        Path.home() / "ninja" / "src" / "ninja",
+        Path("/workspace/phantom/src/phantom"),
+        Path.home() / "phantom" / "src" / "phantom",
     ]:
         if (p / "tools" / "pdx.py").exists():
             return p
     return None
 
 
-src = _find_ninja_src()
+src = _find_phantom_src()
 if src is None:
     sys.stderr.write(
-        "pdx: could not locate Ninja source tree "
-        "(set NINJA_SRC or install under /workspace/ninja).\n"
+        "pdx: could not locate Phantom source tree "
+        "(set PHANTOM_SRC or install under /workspace/phantom).\n"
     )
     sys.exit(2)
 

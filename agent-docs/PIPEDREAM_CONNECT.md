@@ -1,6 +1,6 @@
 # Pipedream Connect Integration Guide
 
-Ninja ships with a Pipedream Connect integration that lets you connect 3,000+
+Phantom ships with a Pipedream Connect integration that lets you connect 3,000+
 third-party apps (GitHub, Google Sheets, Slack, Notion, …) to your agent and
 trigger their actions from Claude's tool-use loop.
 
@@ -41,10 +41,10 @@ with the following schema:
 ```json
 {
   "_comment": "Pipedream Connect OAuth credentials — DO NOT commit to git",
-  "client_id": "YOUR_OAUTH_CLIENT_ID",
+  "client_id":     "YOUR_OAUTH_CLIENT_ID",
   "client_secret": "YOUR_OAUTH_CLIENT_SECRET",
-  "project_id": "proj_XXXXXXXXXXXX",
-  "environment": "production"
+  "project_id":    "proj_XXXXXXXXXXXX",
+  "environment":   "production"
 }
 ```
 
@@ -60,7 +60,7 @@ Keys prefixed with `_` (like `_comment`) are stripped at install time.
 
 ### Rotation
 
-To rotate credentials, upload a new file to the same S3 key. The next time
+To rotate credentials, upload a new file to the same S3 key.  The next time
 the Pipedream credentials are checked (at startup or token refresh), the new
 values are picked up automatically.
 
@@ -72,18 +72,18 @@ After startup, `~/.agent_settings.json` contains:
 
 ```json
 {
-  "default_channel": "#channel-name",
-  "default_channel_id": "C0B1K38ETGV",
-  "default_team_id": "T0A9Q27KD1T",
-  "default_team_name": "RenovateAI",
+  "default_channel":     "#channel-name",
+  "default_channel_id":  "C0B1K38ETGV",
+  "default_team_id":     "T0A9Q27KD1T",
+  "default_team_name":   "RenovateAI",
   "default_team_domain": "renovateai-hq",
-  "workspace": "RenovateAI",
-  "bot_token": "xoxe.xoxb-…",
+  "workspace":           "RenovateAI",
+  "bot_token":           "xoxe.xoxb-…",
   "pipedream": {
-    "client_id": "…",
+    "client_id":     "…",
     "client_secret": "…",
-    "project_id": "proj_24s3vb6",
-    "environment": "production"
+    "project_id":    "proj_24s3vb6",
+    "environment":   "production"
   }
 }
 ```
@@ -96,7 +96,7 @@ external_user_id = default_team_id + "." + default_channel_id
 ```
 
 This scopes every connected account to the specific Slack channel (workspace +
-channel), making it safe to run multiple Ninja instances in different channels
+channel), making it safe to run multiple Phantom instances in different channels
 of the same workspace.
 
 ---
@@ -132,25 +132,25 @@ result = pd.run_action(
     configured_props={
         "slack": {"authProvisionId": "apn_abc123"},
         "channel": "#general",
-        "text": "Hello from Ninja!",
+        "text": "Hello from Phantom!",
     },
 )
 ```
 
 ### Class reference
 
-| Method                                                   | Description                                 |
-| -------------------------------------------------------- | ------------------------------------------- |
-| `PipedreamClient(settings_path, external_user_id)`       | Create client from `~/.agent_settings.json` |
-| `pd.external_user_id`                                    | `"<team_id>.<channel_id>"`                  |
-| `pd.project_id`                                          | Pipedream project ID                        |
-| `pd.environment`                                         | `"production"` \| `"development"`           |
-| `pd.create_connect_token(expires_in, ...)`               | Short-lived token for frontend OAuth flow   |
-| `pd.list_apps(q, limit, has_actions, ...)`               | Browse app catalog (3,000+ apps)            |
-| `pd.list_accounts(external_user_id, app, ...)`           | Connected accounts for this user            |
-| `pd.delete_account(account_id)`                          | Disconnect an account                       |
-| `pd.list_actions(app, limit)`                            | List available actions for an app           |
-| `pd.run_action(key, external_user_id, configured_props)` | Execute an action                           |
+| Method | Description |
+|--------|-------------|
+| `PipedreamClient(settings_path, external_user_id)` | Create client from `~/.agent_settings.json` |
+| `pd.external_user_id` | `"<team_id>.<channel_id>"` |
+| `pd.project_id` | Pipedream project ID |
+| `pd.environment` | `"production"` \| `"development"` |
+| `pd.create_connect_token(expires_in, ...)` | Short-lived token for frontend OAuth flow |
+| `pd.list_apps(q, limit, has_actions, ...)` | Browse app catalog (3,000+ apps) |
+| `pd.list_accounts(external_user_id, app, ...)` | Connected accounts for this user |
+| `pd.delete_account(account_id)` | Disconnect an account |
+| `pd.list_actions(app, limit)` | List available actions for an app |
+| `pd.run_action(key, external_user_id, configured_props)` | Execute an action |
 
 ### CLI
 
@@ -194,15 +194,15 @@ dashboard on port 9000.
 ### Running manually
 
 ```bash
-cd /workspace/ninja/src/ninja/dashboard
-INTEGRATIONS_PORT=9020 PYTHONPATH=/workspace/ninja/src/ninja python integrations_app.py
+cd /workspace/phantom/dashboard
+INTEGRATIONS_PORT=9020 PYTHONPATH=/workspace/phantom/src/phantom python integrations_app.py
 ```
 
 ### Auto-start
 
-The durable production install path is systemd, matching the main Ninja
+The durable production install path is systemd, matching the main Phantom
 agent dashboard. `install.sh` copies, enables, and starts
-`systemd/ninja-integrations.service` alongside `ninja-dashboard.service`.
+`systemd/phantom-integrations.service` alongside `phantom-dashboard.service`.
 
 The repo also contains a `[program:integrations-dashboard]` block in
 `supervisor/supervisord.conf` for environments that consume the bundled
@@ -210,7 +210,7 @@ supervisor config directly, but `install.sh` does not merge supervisor configs.
 
 ### systemd
 
-`systemd/ninja-integrations.service` runs the dashboard on port 9020.
+`systemd/phantom-integrations.service` runs the dashboard on port 9020.
 
 ---
 
@@ -240,16 +240,16 @@ Example AGENT_PROTOCOL usage (for the `run_action` tool):
 
 ## 6. Failure modes and resilience
 
-| Scenario                            | Behaviour                                                      |
-| ----------------------------------- | -------------------------------------------------------------- |
-| S3 credentials not yet uploaded     | Silent — ninja boots normally, Pipedream features disabled     |
-| S3 access denied / network error    | Warning to stderr, ninja continues without Pipedream           |
-| Invalid `project_id` format         | Warning to stderr, credentials not installed                   |
-| Wrong `environment` value           | Warning to stderr, credentials not installed                   |
-| Dashboard can't reach Pipedream API | Returns `{"ok": false, "error": "…"}` — UI shows error state   |
-| Token expired during connect flow   | User is prompted to re-open the dashboard; new token is minted |
+| Scenario | Behaviour |
+|----------|-----------|
+| S3 credentials not yet uploaded | Silent — phantom boots normally, Pipedream features disabled |
+| S3 access denied / network error | Warning to stderr, phantom continues without Pipedream |
+| Invalid `project_id` format | Warning to stderr, credentials not installed |
+| Wrong `environment` value | Warning to stderr, credentials not installed |
+| Dashboard can't reach Pipedream API | Returns `{"ok": false, "error": "…"}` — UI shows error state |
+| Token expired during connect flow | User is prompted to re-open the dashboard; new token is minted |
 
-No failure mode blocks ninja startup or the main agent loop.
+No failure mode blocks phantom startup or the main agent loop.
 
 ---
 
@@ -276,18 +276,18 @@ so the LLM can parse the result reliably.
 
 ### 8.1 Subcommand cheat-sheet
 
-| Command                                               | Purpose                                                    |
-| ----------------------------------------------------- | ---------------------------------------------------------- |
-| `pdx status`                                          | Project, environment, `external_user_id`                   |
-| `pdx list`                                            | Apps the user has already onboarded (use this first!)      |
-| `pdx apps --q github --limit 10`                      | Browse the public catalog                                  |
-| `pdx actions <app_slug>`                              | Enumerate actions available for an app                     |
-| `pdx describe <action_key>`                           | Show the props schema for one action                       |
-| `pdx run <action_key> --args '{...}'`                 | Invoke an action via the **Connect Proxy** (default)       |
-| `pdx run <key> --via actions-api`                     | Invoke via the paid Connect Components API (legacy path)   |
-| `pdx http <app_slug> <METHOD> <url> [--json '{...}']` | Send any authenticated upstream HTTP request via the proxy |
-| `pdx connect [app_slug]`                              | Mint a connect token + OAuth link for a new integration    |
-| `pdx tools [--apps slack,github]`                     | Emit OpenAI-style tool schema for every connected action   |
+| Command                                                    | Purpose                                                     |
+|------------------------------------------------------------|-------------------------------------------------------------|
+| `pdx status`                                               | Project, environment, `external_user_id`                    |
+| `pdx list`                                                 | Apps the user has already onboarded (use this first!)       |
+| `pdx apps --q github --limit 10`                           | Browse the public catalog                                   |
+| `pdx actions <app_slug>`                                   | Enumerate actions available for an app                      |
+| `pdx describe <action_key>`                                | Show the props schema for one action                        |
+| `pdx run <action_key> --args '{...}'`                      | Invoke an action via the **Connect Proxy** (default)        |
+| `pdx run <key> --via actions-api`                          | Invoke via the paid Connect Components API (legacy path)    |
+| `pdx http <app_slug> <METHOD> <url> [--json '{...}']`      | Send any authenticated upstream HTTP request via the proxy  |
+| `pdx connect [app_slug]`                                   | Mint a connect token + OAuth link for a new integration     |
+| `pdx tools [--apps slack,github]`                          | Emit OpenAI-style tool schema for every connected action    |
 
 ### 8.2 Typical LLM session
 
@@ -390,8 +390,8 @@ The Proxy is the only option that:
   empirically — proxy_enabled is true for ~90% of all apps including
   OpenAI, Anthropic, Stripe, SendGrid, Twilio, Resend, Postmark).
 - Does **not** require us to return raw end-user credentials to the
-  client. Pipedream's docs are explicit: _“Never return user
-  credentials to the client.”_
+  client. Pipedream's docs are explicit: *“Never return user
+  credentials to the client.”*
 
 ### 9.2 How `pdx run` uses the proxy
 

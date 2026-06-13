@@ -54,8 +54,8 @@ edit / multi-reference composition requests via `/v1/images/edits`.
 
 | Alias | Full Model ID | Provider | Verified |
 |-------|---------------|----------|----------|
-| `gpt-image` | `alias/openai/gpt-image-2.0` | OpenAI | ✅ **Default** — state-of-the-art |
-| `gpt-image-2` | `alias/openai/gpt-image-2.0` | OpenAI | ✅ Explicit alias for latest |
+| `gpt-image` | `openai/openai/gpt-image-2` | OpenAI | ✅ **Default** — state-of-the-art |
+| `gpt-image-2` | `openai/openai/gpt-image-2` | OpenAI | ✅ Explicit alias for latest |
 | `gpt-image-1.5` | `openai/openai/gpt-image-1.5` | OpenAI | ✅ Legacy (kept for migration) |
 | `gemini-image` | `google/gemini/gemini-3-pro-image-preview` | Google | ✅ |
 

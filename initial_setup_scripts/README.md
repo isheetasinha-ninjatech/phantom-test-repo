@@ -1,13 +1,13 @@
 # initial_setup_scripts
 
-One-shot bootstrap scripts that configure a fresh Ninja sandbox so it
+One-shot bootstrap scripts that configure a fresh Phantom sandbox so it
 matches the operator's environment. Each script is **stdlib-only** and
-**idempotent** — safe to re-run and safe to invoke before the Ninja
+**idempotent** — safe to re-run and safe to invoke before the Phantom
 Python package is installed.
 
-This folder lives inside `src/ninja/` so it ships through the CDK
-`PublishStack` zip (`packages = [{ include = "ninja", from = "src" }]`).
-Anything outside `src/ninja/` is *not* part of the deployed agent.
+This folder lives inside `src/phantom/` so it ships through the CDK
+`PublishStack` zip (`packages = [{ include = "phantom", from = "src" }]`).
+Anything outside `src/phantom/` is *not* part of the deployed agent.
 
 ## Scripts
 
@@ -23,20 +23,20 @@ operator's local time.
 
 ```bash
 # Detect from Slack and apply
-python src/ninja/initial_setup_scripts/set_timezone.py
+python src/phantom/initial_setup_scripts/set_timezone.py
 
 # Preview without modifying the system
-python src/ninja/initial_setup_scripts/set_timezone.py --dry-run
+python src/phantom/initial_setup_scripts/set_timezone.py --dry-run
 
 # Skip Slack detection and set an explicit zone
-python src/ninja/initial_setup_scripts/set_timezone.py --timezone Europe/Berlin
+python src/phantom/initial_setup_scripts/set_timezone.py --timezone Europe/Berlin
 
 # Machine-readable output (only the final zone on stdout)
-python src/ninja/initial_setup_scripts/set_timezone.py --quiet
+python src/phantom/initial_setup_scripts/set_timezone.py --quiet
 ```
 
 On a deployed agent the same script is reachable as
-`/workspace/ninja/initial_setup_scripts/set_timezone.py` and
+`/workspace/phantom/initial_setup_scripts/set_timezone.py` and
 `install.sh` invokes it automatically during sandbox provisioning.
 
 #### Behaviour
@@ -65,7 +65,7 @@ On a deployed agent the same script is reachable as
 
 Bootstrap scripts should:
 
-- Live in this folder (`src/ninja/initial_setup_scripts/`) so they
+- Live in this folder (`src/phantom/initial_setup_scripts/`) so they
   ride along in the CDK package zip.
 - Be runnable with **only the Python stdlib** — they may execute
   before `pip install -r requirements.txt` has happened.

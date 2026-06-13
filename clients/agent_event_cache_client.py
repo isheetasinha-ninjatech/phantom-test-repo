@@ -5,7 +5,7 @@ Agent Event Cache Client
 HTTP client for the agent-event-cache service that provides Slack message
 history. Replaces the S3-backed _read_channel_mirror path when enabled.
 
-Base URL:     https://agent-event-cache.public.<environment>.myninja.ai
+Base URL:     https://agent-event-cache.<environment>.myninja.ai
 Auth:         Bearer ANTHROPIC_AUTH_TOKEN (from /root/.claude/settings.json)
 Feature flag: "use_agent_event_cache": true in /dev/shm/sandbox_metadata.json
 
@@ -36,6 +36,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 from pydantic import BaseModel, Field
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -78,19 +79,9 @@ def _get_base_url() -> str:
     """
     Build service base URL from sandbox_metadata environment field.
 
-    Returns: https://agent-event-cache.public.<env>.myninja.ai
+    Returns: https://agent-event-cache.<env>.myninja.ai
     Raises RuntimeError if environment is unavailable.
     """
-    # Allow explicit override for local development (non-public URL via VPN)
-    local_mode = os.environ.get("LOCAL_DEVELOPMENT_MODE", "").lower() in (
-        "true",
-        "1",
-        "yes",
-    )
-    override = os.environ.get("AGENT_EVENT_CACHE_BASE_URL", "").strip()
-    if local_mode and override:
-        return override
-
     meta = _load_metadata()
     environment = meta.get("environment", "").strip()
     if not environment:
@@ -98,7 +89,7 @@ def _get_base_url() -> str:
             "Cannot determine agent-event-cache URL: "
             "'environment' missing from /dev/shm/sandbox_metadata.json"
         )
-    return f"https://agent-event-cache.public.{environment}.myninja.ai"
+    return f"https://agent-event-cache.{environment}.myninja.ai"
 
 
 def _get_auth_token() -> str:

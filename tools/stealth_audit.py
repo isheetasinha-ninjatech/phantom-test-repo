@@ -180,7 +180,7 @@ async def _run_audit_async(site: str = None, quick: bool = False) -> dict:
                     # Take screenshot for evidence
                     screenshot_path = (
                         REPO_ROOT
-                        / "ninja"
+                        / "phantom"
                         / "screenshots"
                         / f"stealth_audit_{site_name}.png"
                     )

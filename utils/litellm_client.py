@@ -106,8 +106,8 @@ MODELS = {
     "ninja-standard": "ninja-cline-standard",
     "ninja-complex": "ninja-cline-complex",
     # Image models
-    "gpt-image": "alias/openai/gpt-image-2.0",  # Default (new): state-of-the-art, up to 2K, 16 reference images
-    "gpt-image-2": "alias/openai/gpt-image-2.0",  # Explicit alias for the latest
+    "gpt-image": "openai/openai/gpt-image-2",  # Default (new): state-of-the-art, up to 2K, 16 reference images
+    "gpt-image-2": "openai/openai/gpt-image-2",  # Explicit alias for the latest
     "gpt-image-1.5": "openai/openai/gpt-image-1.5",  # Legacy — kept for backward compatibility
     "gemini-image": "google/gemini/gemini-3-pro-image-preview",
     # Video models

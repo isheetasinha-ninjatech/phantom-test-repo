@@ -1,9 +1,9 @@
 """
-Ninja Orchestrator — Browser Automation Agent
+Phantom Orchestrator — Browser Automation Agent
 
-Runs Claude Code as the Ninja browser automation agent.
+Runs Claude Code as the Phantom browser automation agent.
 Agent identity is read from ~/.agent_settings.json config file.
-Agent behavior is defined by agent-docs/NINJA_SPEC.md.
+Agent behavior is defined by agent-docs/PHANTOM_SPEC.md.
 
 Usage:
     python orchestrator.py                    # Run default work loop
@@ -29,16 +29,9 @@ from agents_config import AGENTS
 REPO_ROOT = Path(__file__).parent
 CONFIG_PATH = Path.home() / ".agent_settings.json"
 LOCK_FILE = REPO_ROOT / ".orchestrator.lock"
-# systemd unit the orchestrator runs as. Canonical home for this name; the
-# monitor imports it from here so there is a single source of truth.
-ORCHESTRATOR_SERVICE = "ninja.service"
 LOG_DIR = Path("/workspace/logs")
 MCP_TOKEN_FILE = Path("/dev/shm/mcp-token")
 SETTINGS_FILE = REPO_ROOT / "settings.json"
-# Blocked-issue review: every N orchestrator cycles, revisit issues labelled
-# 'blocked' to see if any can be unblocked. Counter persists across runs.
-CYCLE_COUNT_FILE = REPO_ROOT / ".cycle_count"
-BLOCKED_REVIEW_EVERY = 24
 CLAUDE_SETTINGS_FILE = Path.home() / ".claude" / "settings.json"
 
 # Settings template - variables filled from /root/.claude/settings.json
@@ -65,15 +58,15 @@ SETTINGS_TEMPLATE = string.Template(
 LOG_DIR.mkdir(exist_ok=True)
 
 
-# Single canonical logger name. Filename is always ``ninja_YYYY-MM-DD.log``.
+# Single canonical logger name. Filename is always ``phantom_YYYY-MM-DD.log``.
 # We deliberately ignore caller-supplied agent names — historically several
-# callers passed ``"orchestrator"`` early in startup and then ``"ninja"``
+# callers passed ``"orchestrator"`` early in startup and then ``"phantom"``
 # later, which created empty ``orchestrator_*.log`` orphan files daily.
-_LOGGER_NAME = "ninja"
+_LOGGER_NAME = "phantom"
 
 
 def setup_logging(agent_name: str = "orchestrator") -> logging.Logger:
-    """Return the canonical ninja logger.
+    """Return the canonical phantom logger.
 
     Idempotent: repeated calls return the same logger without re-creating
     handlers. The file is opened lazily (``delay=True``) so a logger that
@@ -94,7 +87,7 @@ def setup_logging(agent_name: str = "orchestrator") -> logging.Logger:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    log_filename = LOG_DIR / f"ninja_{datetime.now().strftime('%Y-%m-%d')}.log"
+    log_filename = LOG_DIR / f"phantom_{datetime.now().strftime('%Y-%m-%d')}.log"
     file_handler = logging.FileHandler(
         log_filename,
         encoding="utf-8",
@@ -105,7 +98,7 @@ def setup_logging(agent_name: str = "orchestrator") -> logging.Logger:
     logger.addHandler(file_handler)
 
     # No StreamHandler: systemd captures stdout/stderr into the journal
-    # (StandardOutput=journal in ninja.service). Adding a stdout handler
+    # (StandardOutput=journal in phantom.service). Adding a stdout handler
     # here would duplicate every logger.info() into journalctl.
 
     return logger
@@ -178,7 +171,7 @@ def upgrade_claude_cli(logger: logging.Logger = None, timeout: int = 60) -> None
       download), <1 s afterwards ("Claude Code is up to date"). Exit
       code is 0 in both cases, so we don't have to parse output.
     * Any failure (non-zero exit, timeout, FileNotFoundError) is logged
-      at WARNING level and swallowed. Ninja continues with whatever
+      at WARNING level and swallowed. Phantom continues with whatever
       version is currently installed.
 
     Args:
@@ -520,34 +513,6 @@ def check_single_instance():
         _early_logger.warning(f"Could not create lock file: {e}")
 
 
-def is_orchestrator_running() -> bool:
-    """Return True if the orchestrator systemd unit is up (active or starting).
-
-    Uses systemd as the OS-native source of truth — ``systemctl is-active`` —
-    instead of inspecting a lock file. This is the check the monitor uses to
-    decide whether to launch the orchestrator. ``activating`` (the unit's
-    ExecStartPre sleep / startup window) counts as "up" so the monitor doesn't
-    redundantly start a unit that is already coming up.
-
-    Ninja runs the orchestrator exclusively as ``ninja.service`` under
-    systemd, and sandboxes restart every ~30 min, so the OS unit state is both
-    authoritative and self-cleaning (no stale lock can survive a restart).
-    """
-    try:
-        result = subprocess.run(
-            ["systemctl", "is-active", ORCHESTRATOR_SERVICE],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        # is-active prints one of: active / activating / inactive / failed / ...
-        state = result.stdout.strip()
-        return state in ("active", "activating", "reloading")
-    except (OSError, subprocess.SubprocessError):
-        # If systemctl can't be queried, assume not running so work can proceed.
-        return False
-
-
 def update_lock_file(agent_name: str = None):
     """Update the lock file with the agent name and refresh heartbeat."""
     if LOCK_FILE.exists():
@@ -637,17 +602,12 @@ def read_file(path: Path) -> str:
     return path.read_text() if path.exists() else ""
 
 
-def build_prompt(agent: dict, task: str = "", lean: bool = False) -> str:
-    """Build the prompt for the Ninja browser automation agent.
+def build_prompt(agent: dict, task: str = "") -> str:
+    """Build the prompt for the Phantom browser automation agent.
 
     Args:
         agent: Agent configuration dict
         task: Optional specific task
-        lean: When True, omit the heavy context (full memory dump + the
-            detailed doc-read list) and replace it with a one-line pointer.
-            Used for the Phase 2 (reflect) call that runs right after the
-            Phase 1 (work) call in the same cycle — the agent already read the
-            docs and loaded memory in Phase 1, so re-sending them is wasteful.
     """
 
     # Get default channel from config
@@ -656,23 +616,6 @@ def build_prompt(agent: dict, task: str = "", lean: bool = False) -> str:
         "default_channel_name", config.get("default_channel", "#your-channel")
     )
     default_task = f"Check Slack {channel} for new requests, do your work, update your memory file and reflect and improve your toolkit as per agent-docs/ORCHESTRATOR.md."
-
-    memory_path = f"memory/{agent['name'].lower()}_memory.md"
-
-    if lean:
-        # Phase 1 already loaded docs + memory in this cycle. Keep only a thin
-        # pointer so the reflect call doesn't re-send the (large) memory dump.
-        return f"""# You are {agent['name']} {agent['emoji']} (continuing this cycle)
-
-You already read the docs and loaded your memory in the work phase above.
-Re-read `{memory_path}` only if you need to. Now do the following.
-
----
-
-## Current Task
-
-{task if task else default_task}
-"""
 
     memory = read_file(REPO_ROOT / "memory" / f"{agent['name'].lower()}_memory.md")
 
@@ -689,7 +632,7 @@ Re-read `{memory_path}` only if you need to. Now do the following.
 
 You are currently running as the orchestrator agent. Before starting work, read these files for full context:
 
-1. **Your Specification:** `cat agent-docs/NINJA_SPEC.md`
+1. **Your Specification:** `cat agent-docs/PHANTOM_SPEC.md`
 2. **Agent Protocol:** `cat agent-docs/AGENT_PROTOCOL.md`
 3. **Slack Interface Docs:** `cat agent-docs/SLACK_INTERFACE.md`
 4. **Workflow Docs:** `cat agent-docs/ORCHESTRATOR.md`
@@ -709,158 +652,8 @@ You are currently running as the orchestrator agent. Before starting work, read 
 """
 
 
-def count_open_issues() -> int:
-    """Return the number of actionable open issues (open and not 'blocked').
-
-    Calls the issue tool directly as a Python function (no subprocess).
-    Returns 0 on any failure so a transient GitHub/gh problem never blocks the
-    orchestrator from at least running its reflect phase.
-    """
-    try:
-        from tools import issues
-
-        return issues.count_actionable()
-    except Exception:
-        return 0
-
-
-def count_blocked_issues() -> int:
-    """Return the number of open issues labelled 'blocked' (0 on any failure)."""
-    try:
-        from tools import issues
-
-        return issues.count_blocked()
-    except Exception:
-        return 0
-
-
-def bump_cycle_count() -> int:
-    """Increment and return the persistent run-cycle counter."""
-    try:
-        n = int(CYCLE_COUNT_FILE.read_text().strip()) + 1
-    except (OSError, ValueError):
-        n = 1
-    try:
-        CYCLE_COUNT_FILE.write_text(str(n))
-    except OSError:
-        pass
-    return n
-
-
-def build_work_prompt(agent: dict) -> str:
-    """Phase 1 prompt: work exactly ONE open GitHub issue (the work queue)."""
-    base = build_prompt(agent)
-    return (
-        base
-        + """
----
-
-## Loop Phase 1 — WORK ONE ISSUE
-
-Ninja uses **GitHub Issues as its work queue**. Work **exactly ONE issue this
-cycle** — the single highest-priority open issue. Do not start a second one;
-the next cycle (a fresh orchestrator run) will pick up the next issue. Keeping
-each cycle to one issue keeps runs small, focused, and recoverable.
-
-1. List the open issues: `python tools/issues.py list`
-2. Pick the **single highest-priority** open issue. That is the only issue you
-   work this cycle.
-3. **Understand it before acting.** Read the full issue (title, body, and any
-   comments). Issues are often terse and may lack context, so before starting:
-   - Check the issue comments for clarifications.
-   - **Read recent Slack history for context** — the issue usually originated
-     from a Slack conversation: `python slack_interface.py read -l 50`
-     (raise `-l` if you need to go further back). Use it to recover intent,
-     constraints, and acceptance criteria that aren't written in the issue.
-   - If it's still ambiguous, comment on the issue with your understanding /
-     questions rather than guessing.
-4. Work that one issue to completion.
-5. As you make progress, comment on it: `python tools/issues.py comment <n> --body "..."`
-6. When it is fully done, close it with a summary:
-   `python tools/issues.py close <n> --comment "done: <what/where, PR # if any>"`
-7. **If you cannot complete it** (missing access/credentials, external
-   dependency, waiting on a human), do NOT leave it open-and-stuck and do NOT
-   close it. Mark it blocked so it leaves the work queue:
-   `python tools/issues.py block <n> --comment "why blocked + what is needed"`
-   Blocked issues are revisited periodically and rejoin the queue via
-   `python tools/issues.py unblock <n>` once the blocker clears.
-8. **Stop after this single issue.** Do NOT start another issue and do NOT
-   invent new work here — only work the one existing issue you selected. Filing
-   new issues happens in the reflect phase. See `agent-docs/LOOP.md`.
-"""
-    )
-
-
-def build_reflect_prompt(agent: dict, lean: bool = False) -> str:
-    """Phase 2 prompt: reflect, file new issues, learn, build tools, update memory.
-
-    When ``lean`` is True (Phase 1 already ran this cycle), the base prompt
-    omits the full memory dump and detailed doc-read list to avoid re-sending
-    them — the agent already has that context from the work phase. When False
-    (Phase 1 was skipped because there were no open issues), reflect is the only
-    call this cycle, so it gets the full base.
-    """
-    base = build_prompt(agent, lean=lean)
-    return (
-        base
-        + """
----
-
-## Loop Phase 2 — REFLECT, PLAN & LEARN
-
-This cycle's work (if any) is done. Now look ahead and feed the loop. Per
-`agent-docs/LOOP.md`:
-
-1. **Check Slack** for any new requests that imply work. For anything
-   substantial, file a GitHub issue instead of doing it inline:
-   `python tools/issues.py create --title "..." --body "..."`
-2. **Plan ahead**: based on your memory, recent work, and the project's goals
-   (VISION/spec), file follow-up issues for improvements, fixes, and ideas you
-   discovered — so the next cycle has work. Keep them concrete and verifiable.
-3. **Build/refine your toolkit**: if you repeatedly need something, add or
-   improve a tool under `tools/` (file an issue if it's large).
-4. **Learn & remember**: update your memory file with what you learned, what
-   worked, and what to try next.
-
-Do NOT do large implementation work here — capture it as issues so Phase 1 can
-pick it up in a controlled, queued way.
-"""
-    )
-
-
-def build_blocked_review_prompt(agent: dict) -> str:
-    """Periodic prompt: re-check blocked issues and unblock any that can move."""
-    base = build_prompt(agent, lean=True)
-    return (
-        base
-        + """
----
-
-## Blocked-Issue Review
-
-Some open issues are labelled `blocked` (Ninja could not progress them). For
-EACH blocked issue, decide:
-
-1. List them: `python tools/issues.py list --label blocked`
-2. Read the issue + its BLOCKED comment to see what it was waiting on.
-3. If the blocker is now resolved (access granted, dependency shipped, human
-   replied), return it to the queue:
-   `python tools/issues.py unblock <n> --comment "unblocked: <why>"`
-4. If it is permanently impossible or obsolete, close it:
-   `python tools/issues.py close <n> --comment "won't do: <why>"`
-5. Otherwise leave it blocked — optionally comment what is still missing.
-
-Do NOT do implementation work here; only triage the blocked list.
-"""
-    )
-
-
-def run_agent(agent: dict, task: str = "", prompt: str = None) -> None:
-    """Run Claude Code for a single agent in headless autonomous mode.
-
-    If ``prompt`` is given it is used verbatim (e.g. a loop phase prompt);
-    otherwise a prompt is built from ``task``.
-    """
+def run_agent(agent: dict, task: str = "") -> None:
+    """Run Claude Code for a single agent in headless autonomous mode."""
     # Setup logger for this subprocess
     agent_logger = setup_logging(agent["name"].lower())
 
@@ -868,8 +661,7 @@ def run_agent(agent: dict, task: str = "", prompt: str = None) -> None:
     agent_logger.info(f"{agent['emoji']} Starting {agent['name']} ({agent['role']})")
     agent_logger.info(f"{'='*60}\n")
 
-    if prompt is None:
-        prompt = build_prompt(agent, task)
+    prompt = build_prompt(agent, task)
 
     # Run Claude Code CLI
     # -p: Print mode (non-interactive)
@@ -945,7 +737,7 @@ def run_capability_tests() -> bool:
             all_passed = False
     except Exception:
         test_logger.warning(
-            "   ⚠️  Browser server not running (start with: python ninja/browser_server.py start)"
+            "   ⚠️  Browser server not running (start with: python phantom/browser_server.py start)"
         )
         results["browser"] = False
 
@@ -965,10 +757,10 @@ def run_capability_tests() -> bool:
     required_files = [
         "slack_interface.py",
         "browser_interface.py",
-        "ninja/browser_server.py",
-        "ninja/observer.py",
-        "ninja/actions.py",
-        "agent-docs/NINJA_SPEC.md",
+        "phantom/browser_server.py",
+        "phantom/observer.py",
+        "phantom/actions.py",
+        "agent-docs/PHANTOM_SPEC.md",
         "agent-docs/AGENT_PROTOCOL.md",
         "agent-docs/SLACK_INTERFACE.md",
         "agent-docs/PIPEDREAM_CONNECT.md",
@@ -1013,7 +805,7 @@ def run_capability_tests() -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Ninja Orchestrator — Browser Automation Agent",
+        description="Phantom Orchestrator — Browser Automation Agent",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -1023,7 +815,7 @@ Examples:
 
 Configuration:
   Agent identity is read from ~/.agent_settings.json
-  Set with: python slack_interface.py config --set-agent ninja
+  Set with: python slack_interface.py config --set-agent phantom
         """,
     )
     parser.add_argument("--task", "-t", default="", help="Specific task for the agent")
@@ -1121,35 +913,17 @@ Configuration:
     )
     logger.info(f"Log file: {log_file}")
 
-    # Run the agent — issue-driven two-phase loop.
-    # The monitor (monitor.py) runs as a separate process and feeds the queue by
-    # filing GitHub issues and launching this orchestrator when there is open
-    # work. This process exits when the cycle completes; systemd Restart will
-    # re-invoke it for the next cycle. See agent-docs/LOOP.md.
-    if args.task:
-        # Explicit operator task: run it directly, bypass the loop phases.
-        logger.info(f"🚀 Running explicit task: {args.task}")
-        run_agent(agent, args.task)
-    else:
-        open_issues = count_open_issues()
-        logger.info(f"📋 Actionable GitHub issues (work queue): {open_issues}")
-
-        # Reflect only runs after a work phase; empty queue skips both.
-        ran_work = open_issues > 0
-        if ran_work:
-            logger.info(f"🚀 Phase 1 (work): completing {open_issues} open issue(s)")
-            run_agent(agent, prompt=build_work_prompt(agent))
-            logger.info("🧠 Phase 2 (reflect): planning, filing issues, learning")
-            run_agent(agent, prompt=build_reflect_prompt(agent, lean=True))
-        else:
-            logger.info("💤 No actionable issues — skipping work + reflect phases")
-
-        # Every BLOCKED_REVIEW_EVERY cycles, re-triage blocked issues so
-        # resolved blockers rejoin the queue.
-        cycle = bump_cycle_count()
-        if cycle % BLOCKED_REVIEW_EVERY == 0 and count_blocked_issues() > 0:
-            logger.info(f"🚧 Cycle {cycle}: reviewing blocked issues")
-            run_agent(agent, prompt=build_blocked_review_prompt(agent))
+    # Run the agent — single work cycle.
+    # The monitor (monitor.py) runs as a separate process managed independently
+    # by phantom-monitor.service (systemd) or by the operator directly.
+    # This process exits when the work cycle completes; systemd Restart=on-failure
+    # will re-invoke it for the next cycle.
+    work_task = (
+        args.task
+        or "Check Slack for new requests, do your work, update your memory file."
+    )
+    logger.info(f"🚀 Running work cycle: {work_task}")
+    run_agent(agent, work_task)
 
 
 if __name__ == "__main__":

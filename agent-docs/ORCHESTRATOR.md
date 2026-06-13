@@ -7,8 +7,8 @@
 - `python slack_interface.py config` - Check configuration
 
 **Browser (Persistent — tabs survive between tasks):**
-- `python ninja/browser_server.py status` - Check browser status
-- `python ninja/browser_server.py start` - Start browser if not running
+- `python phantom/browser_server.py status` - Check browser status
+- `python phantom/browser_server.py start` - Start browser if not running
 - Connect in Python: `BrowserInterface.connect_cdp()` (see your spec for full API)
 
 **Tavily Web Research** (text-based, no browser needed):
@@ -32,12 +32,12 @@ You are running in **headless CLI mode** — there is no human at the terminal.
 - **Reply in threads** — If someone asks you a question or requests an update, reply in the thread (`-t thread_ts`), not as a new message.
 
 **Workflow:**
-1. Read your spec file first: `cat agent-docs/NINJA_SPEC.md`
+1. Read your spec file first: `cat agent-docs/PHANTOM_SPEC.md`
 2. Read Slack for new requests or context
 3. Do your work (browser tasks, research, screenshots, data extraction)
 4. Post results to Slack (short messages, attach screenshots/files)
 5. Commit any code changes to git
-6. Update your memory file (`memory/ninja_memory.md`)
+6. Update your memory file (`memory/phantom_memory.md`)
 
 ---
 

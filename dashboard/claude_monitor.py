@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from ninja.utils.pricing import get_pricing
+from phantom.utils.pricing import get_pricing
 
 # Configuration
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"

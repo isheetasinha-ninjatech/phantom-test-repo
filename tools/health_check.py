@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Health Check — Unified system diagnostics for Ninja.
+Health Check — Unified system diagnostics for Phantom.
 
 Checks all critical subsystems in one command:
   - Browser server (port 9222)
@@ -52,7 +52,7 @@ def check_browser() -> dict:
         return {
             "status": "error",
             "message": f"Browser server not responding: {e}",
-            "fix": "python ninja/browser_server.py start",
+            "fix": "python phantom/browser_server.py start",
         }
 
 
@@ -62,7 +62,7 @@ def check_slack() -> dict:
         return {
             "status": "error",
             "message": f"Config file not found: {CONFIG_PATH}",
-            "fix": "python slack_interface.py config --set-agent ninja",
+            "fix": "python slack_interface.py config --set-agent phantom",
         }
 
     try:
@@ -186,11 +186,11 @@ def check_files() -> dict:
         "orchestrator.py",
         "slack_interface.py",
         "browser_interface.py",
-        "ninja/browser_server.py",
-        "ninja/observer.py",
-        "ninja/actions.py",
-        "ninja/stealth.py",
-        "agent-docs/NINJA_SPEC.md",
+        "phantom/browser_server.py",
+        "phantom/observer.py",
+        "phantom/actions.py",
+        "phantom/stealth.py",
+        "agent-docs/PHANTOM_SPEC.md",
         "agent-docs/AGENT_PROTOCOL.md",
         "agent-docs/SLACK_INTERFACE.md",
         "agent-docs/PIPEDREAM_CONNECT.md",
@@ -248,7 +248,7 @@ def run_health_check(auto_fix: bool = False) -> dict:
         if results["browser"]["status"] == "error":
             try:
                 subprocess.run(
-                    ["python", "ninja/browser_server.py", "start"],
+                    ["python", "phantom/browser_server.py", "start"],
                     cwd=str(REPO_ROOT),
                     capture_output=True,
                     timeout=30,
@@ -313,7 +313,7 @@ def print_results(results: dict):
     overall_icons = {"healthy": "🟢", "degraded": "🟡", "unhealthy": "🔴"}
 
     print("\n" + "=" * 60)
-    print("🏥 NINJA HEALTH CHECK")
+    print("🏥 PHANTOM HEALTH CHECK")
     print("=" * 60)
 
     for name, result in results.items():
@@ -347,7 +347,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Ninja Health Check — unified system diagnostics",
+        description="Phantom Health Check — unified system diagnostics",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

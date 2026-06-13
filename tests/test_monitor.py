@@ -8,13 +8,13 @@ import unittest
 from unittest import mock
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_NINJA_ROOT = os.path.dirname(_HERE)
-if _NINJA_ROOT not in sys.path:
-    sys.path.insert(0, _NINJA_ROOT)
+_PHANTOM_ROOT = os.path.dirname(_HERE)
+if _PHANTOM_ROOT not in sys.path:
+    sys.path.insert(0, _PHANTOM_ROOT)
 
 import monitor  # noqa: E402
 
-AGENT = {"name": "Ninja", "mentions": ["ninja", "@ninja"]}
+AGENT = {"name": "Phantom", "mentions": ["phantom", "@phantom"]}
 
 
 def msg(**fields) -> dict:
@@ -33,7 +33,7 @@ THIRD_BOT = lambda text="": msg(
 )
 
 
-def _patch_own_identity(bot_id="BNINJA", user_id="UNINJA"):
+def _patch_own_identity(bot_id="BPHANTOM", user_id="UPHANTOM"):
     return mock.patch.object(
         monitor,
         "_get_own_identity",
@@ -48,43 +48,43 @@ class IsBotMessageTest(unittest.TestCase):
         self.assertTrue(monitor.is_bot_message(msg(subtype="bot_message")))
         self.assertTrue(monitor.is_bot_message(msg(app_id="A1")))
         # Defensive: username on a human payload must not flip it.
-        self.assertFalse(monitor.is_bot_message(msg(user="U1", username="Ninja")))
+        self.assertFalse(monitor.is_bot_message(msg(user="U1", username="Phantom")))
 
 
 class ShouldRespondTest(unittest.TestCase):
     """The whole policy as a truth table.
 
-    OWN_BOT here is a peer bot (B1), not Ninja itself; own-post detection
+    OWN_BOT here is a peer bot (B1), not Phantom itself; own-post detection
     is covered by OwnPostDetectionTest.
     """
 
     CASES = [
         # (label,                                message,                                expected)
         ("human, no mention", HUMAN("good morning"), True),
-        ("human, mentions ninja", HUMAN("hey ninja"), True),
+        ("human, mentions phantom", HUMAN("hey phantom"), True),
         ("human, audio", msg(user="U1", files=[{"mimetype": "audio/webm"}]), True),
         ("own bot filler (the bug)", OWN_BOT("Working on it..."), False),
         (
-            "own bot post containing 'ninja'",
-            OWN_BOT("Ninja finished the task."),
+            "own bot post containing 'phantom'",
+            OWN_BOT("Phantom finished the task."),
             True,
         ),
         (
-            "sub-agent relay to ninja",
-            SUBAGENT("Pixel", "ninja please pick this up"),
+            "sub-agent relay to phantom",
+            SUBAGENT("Pixel", "phantom please pick this up"),
             True,
         ),
         (
-            "sub-agent status without ninja",
+            "sub-agent status without phantom",
             SUBAGENT("Nova", "search complete"),
             False,
         ),
         ("third-party bot, no mention", THIRD_BOT("PR #42 merged"), False),
-        ("third-party bot pinging ninja", THIRD_BOT("@ninja CI failed"), True),
+        ("third-party bot pinging phantom", THIRD_BOT("@phantom CI failed"), True),
     ]
 
     def test_truth_table(self):
-        with _patch_own_identity(bot_id="BNINJA"):
+        with _patch_own_identity(bot_id="BPHANTOM"):
             for label, message, expected in self.CASES:
                 with self.subTest(label):
                     self.assertEqual(
@@ -97,16 +97,16 @@ class ShouldRespondTest(unittest.TestCase):
 
 
 class OwnPostDetectionTest(unittest.TestCase):
-    """Ninja must never respond to its own posts."""
+    """Phantom must never respond to its own posts."""
 
-    OWN_BOT_ID = "BNINJA"
+    OWN_BOT_ID = "BPHANTOM"
 
     def test_skips_own_filler(self):
         own = msg(
             bot_id=self.OWN_BOT_ID,
             subtype="bot_message",
-            username="Ninja",
-            text="Hi, I'm Ninja \u2014 your Browser Automation Agent.",
+            username="Phantom",
+            text="Hi, I'm Phantom \u2014 your Browser Automation Agent.",
         )
         with _patch_own_identity(self.OWN_BOT_ID):
             self.assertFalse(monitor.is_own_post(OWN_BOT("hi")))  # peer bot
@@ -117,21 +117,21 @@ class OwnPostDetectionTest(unittest.TestCase):
 class ShouldReactWithGhostTest(unittest.TestCase):
     """Ghost-emoji ack is tighter than the response policy."""
 
-    OWN_BOT_ID = "BNINJA"
+    OWN_BOT_ID = "BPHANTOM"
 
     def test_truth_table(self):
         own = msg(
             bot_id=self.OWN_BOT_ID,
             subtype="bot_message",
-            username="Ninja",
-            text="anything mentioning ninja",
+            username="Phantom",
+            text="anything mentioning phantom",
         )
         cases = [
             ("human, no mention", HUMAN("hi"), True),
-            ("human, with mention", HUMAN("hey ninja"), True),
+            ("human, with mention", HUMAN("hey phantom"), True),
             ("own post", own, False),
             ("third-party bot, silent", THIRD_BOT("PR #42 merged"), False),
-            ("third-party bot, ping", THIRD_BOT("@ninja CI failed"), True),
+            ("third-party bot, ping", THIRD_BOT("@phantom CI failed"), True),
         ]
         with _patch_own_identity(self.OWN_BOT_ID):
             for label, message, expected in cases:
@@ -142,15 +142,11 @@ class ShouldReactWithGhostTest(unittest.TestCase):
                     )
 
 
-NINJA_AGENT = {
-    "name": "Ninja",
+PHANTOM_AGENT = {
+    "name": "Phantom",
     "role": "Browser Automation Agent",
-    "emoji": "🥷",
-    "mentions": [
-        "ninja",
-        "Ninja",
-        "@ninja",
-    ],
+    "emoji": "👻",
+    "mentions": ["phantom", "@phantom"],
 }
 
 
@@ -192,7 +188,7 @@ class ShouldPostWelcomeTest(unittest.TestCase):
 
 class BuildWelcomeMessageTest(unittest.TestCase):
     def test_contains_dashboards_browser_and_signature(self):
-        text = monitor.build_welcome_message(NINJA_AGENT)
+        text = monitor.build_welcome_message(PHANTOM_AGENT)
         # Live browser (noVNC), activity dashboard, connect-apps dashboard
         self.assertIn("0.0.0.0:6080", text)
         self.assertIn("0.0.0.0:9000", text)
@@ -203,7 +199,7 @@ class BuildWelcomeMessageTest(unittest.TestCase):
         self.assertIn("Browser", text)
         self.assertIn("Integrations", text)
         # Identity
-        self.assertIn("Ninja", text)
+        self.assertIn("Phantom", text)
         self.assertIn("Browser Automation Agent", text)
         # Idempotency anchor
         self.assertIn(monitor._WELCOME_SIGNATURE, text)
@@ -211,27 +207,27 @@ class BuildWelcomeMessageTest(unittest.TestCase):
     def test_no_pipedream_branding_leak(self):
         # 'Pipedream' is an implementation detail \u2014 must not appear in
         # the user-facing welcome.
-        self.assertNotIn("Pipedream", monitor.build_welcome_message(NINJA_AGENT))
+        self.assertNotIn("Pipedream", monitor.build_welcome_message(PHANTOM_AGENT))
 
     def test_multilingual_framing(self):
-        # Ninja is multilingual; the welcome must invite users in
+        # Phantom is multilingual; the welcome must invite users in
         # any language and must not imply English-only.
-        text = monitor.build_welcome_message(NINJA_AGENT)
+        text = monitor.build_welcome_message(PHANTOM_AGENT)
         self.assertIn("any language", text)
         self.assertNotIn("plain English", text)
         self.assertNotIn("in English", text)
 
-    def test_no_literal_at_ninja_mention(self):
-        # Slack auto-linkifies a literal '@ninja' in message text to a
+    def test_no_literal_at_phantom_mention(self):
+        # Slack auto-linkifies a literal '@phantom' in message text to a
         # broken user mention. The welcome must not contain that token.
-        text = monitor.build_welcome_message(NINJA_AGENT)
-        self.assertNotIn("@ninja", text)
-        self.assertNotIn("@Ninja", text)
+        text = monitor.build_welcome_message(PHANTOM_AGENT)
+        self.assertNotIn("@phantom", text)
+        self.assertNotIn("@Phantom", text)
 
     def test_idempotent_via_signature(self):
         # The text we build must trip our own should_post_welcome guard
         # if it appears as a previous bot post in history.
-        text = monitor.build_welcome_message(NINJA_AGENT)
+        text = monitor.build_welcome_message(PHANTOM_AGENT)
         prior = OWN_BOT(text)
         self.assertFalse(monitor.should_post_welcome([prior]))
 

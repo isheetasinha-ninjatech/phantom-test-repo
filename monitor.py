@@ -13,7 +13,7 @@ Features:
 
 Usage:
     python monitor.py              # Run with configured agent
-    python monitor.py --agent ninja # Run as specific agent
+    python monitor.py --agent phantom # Run as specific agent
 """
 
 import json
@@ -29,26 +29,15 @@ from agents_config import AGENTS
 # Cron scheduler — see agent-docs/CRON.md and tools/cron.py
 from cron_scheduler import claim_cron, get_due_cron_messages
 
-# Issue-driven loop — see agent-docs/LOOP.md. The monitor feeds the work queue
-# (GitHub issues) and launches the orchestrator when there is open work and no
-# orchestrator is already running.
-from orchestrator import (
-    ORCHESTRATOR_SERVICE,
-    count_open_issues,
-    is_orchestrator_running,
-)
-
 # Direct import of SlackInterface — avoids subprocess spawning overhead
 # This single instance is reused for all API calls in the monitor loop
-from slack_interface import SlackInterface
-from utils.posthog_client import capture
+from slack_interface import SlackConfig, SlackInterface, get_slack_tokens
 
 _slack_instance = None
 _own_identity_cache: dict | None = None
 
 EMOJI_MAP = {
     "👻": "ghost",
-    "🥷": "ninja",
     "🎶": "notes",
     "🎵": "musical_note",
     "💻": "computer",
@@ -108,7 +97,6 @@ def is_own_post(message: dict) -> bool:
 # Configuration
 REPO_ROOT = Path(__file__).parent
 CONFIG_PATH = Path.home() / ".agent_settings.json"
-# ORCHESTRATOR_SERVICE is imported from orchestrator.py (single source of truth).
 POLL_INTERVAL = 60  # base seconds
 POLL_JITTER = 5  # random jitter seconds
 MAX_RUNTIME = 24 * 60 * 60  # 24 hours in seconds
@@ -357,7 +345,7 @@ check_for_mention = should_respond_to_message
 # the welcome and as our invisible idempotency anchor when we read back
 # channel history. Don't change this string without updating
 # build_welcome_message() to match \u2014 the test suite enforces that.
-_WELCOME_SIGNATURE = "Hi, I'm Ninja \u2014 your"
+_WELCOME_SIGNATURE = "Hi, I'm Phantom \u2014 your"
 
 
 def is_human_message(message: dict) -> bool:
@@ -399,7 +387,7 @@ def build_welcome_message(agent: dict) -> str:
     back channel history. The test suite enforces this invariant.
     """
     emoji = agent.get("emoji", "\U0001f47b")
-    name = agent.get("name", "Ninja")
+    name = agent.get("name", "Phantom")
     role = agent.get("role", "Browser Automation Agent")
     return (
         f"{emoji} **Hi, I'm {name} \u2014 your {role}.**\n"
@@ -446,7 +434,7 @@ def build_welcome_message(agent: dict) -> str:
         "**\U0001f4ac How to brief me**\n"
         "- Just type a message in this channel \u2014 I reply to every "
         "human message.\n"
-        "- Include the word `ninja` anywhere in your message to be "
+        "- Include the word `phantom` anywhere in your message to be "
         "explicit, or to ping me from a thread.\n"
         "- Send a *voice note* in any language and I'll transcribe and "
         "act on it.\n"
@@ -610,20 +598,12 @@ The current time is {time.strftime("%Y-%m-%d %H:%M:%S")}. You have {len(pending_
         )
 
         if success_count > 0:
-            capture(
-                "ninja batch response completed",
-                {"success": True, "response_count": success_count},
-            )
             print(
                 f"✅ Claude processed batch - {success_count} response indicator(s) found",
                 flush=True,
             )
             return True
         else:
-            capture(
-                "ninja batch response completed",
-                {"success": True, "response_count": 0},
-            )
             print(
                 f"⚠️ Claude batch response (may have posted): {output[:300]}...",
                 flush=True,
@@ -631,63 +611,10 @@ The current time is {time.strftime("%Y-%m-%d %H:%M:%S")}. You have {len(pending_
             return True  # Assume success even if we can't confirm
 
     except subprocess.TimeoutExpired:
-        capture(
-            "ninja batch response completed", {"success": False, "error": "timeout"}
-        )
         print("⚠️ Claude batch response timed out", flush=True)
         return False
     except Exception as e:
-        capture("ninja batch response completed", {"success": False, "error": str(e)})
         print(f"⚠️ Error: {e}", flush=True)
-        return False
-
-
-def maybe_launch_orchestrator() -> bool:
-    """Launch the orchestrator if there is open work and it isn't running.
-
-    Ninja's loop: the monitor feeds the GitHub-issue work queue; when there
-    are open issues and no orchestrator is currently running, kick one off so
-    it works the queue (phase 1) then reflects/plans (phase 2). Returns True if
-    an orchestrator was launched. See agent-docs/LOOP.md.
-
-    The orchestrator is started as the ``ninja.service`` systemd unit so it is
-    properly managed (journal logging, restart policy, ExecStartPre, env).
-    Ninja always runs under systemd; there is no non-systemd fallback.
-    """
-    if is_orchestrator_running():
-        return False
-
-    open_issues = count_open_issues()
-    if open_issues <= 0:
-        return False
-
-    print(
-        f"🚀 {open_issues} open issue(s) and orchestrator idle — launching orchestrator",
-        flush=True,
-    )
-
-    # Launch via systemd (ninja.service) so the run is managed: journal
-    # logging, restart policy, ExecStartPre, env (PYTHONPATH/DISPLAY). Ninja
-    # always runs under systemd, so there is no non-systemd fallback — failing
-    # loudly is better than launching in a wrong/unmanaged environment.
-    try:
-        result = subprocess.run(
-            ["systemctl", "start", ORCHESTRATOR_SERVICE],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            print(f"✅ Started {ORCHESTRATOR_SERVICE} via systemd", flush=True)
-            return True
-        print(
-            f"⚠️ systemctl start {ORCHESTRATOR_SERVICE} failed "
-            f"({result.returncode}): {result.stderr.strip()}",
-            flush=True,
-        )
-        return False
-    except (OSError, subprocess.SubprocessError) as e:
-        print(f"⚠️ Could not launch {ORCHESTRATOR_SERVICE}: {e}", flush=True)
         return False
 
 
@@ -810,7 +737,9 @@ def main():
                     # Ghost-ack only humans + bots that mention us.
                     if should_react_with_ghost(msg, agent):
                         try:
-                            _reaction = os.environ.get("NINJA_AGENT_EMOJI", "🥷").strip()
+                            _reaction = os.environ.get(
+                                "PHANTOM_AGENT_EMOJI", "👻"
+                            ).strip()
                             # Slack reactions use emoji names, not emoji chars. Map common ones.
                             _get_slack().react(
                                 msg_id, EMOJI_MAP.get(_reaction, "ghost")
@@ -836,10 +765,8 @@ def main():
                                         "url": f.get("url_private_download", ""),
                                     }
                                 )
-                        capture("ninja audio message received", {"user": user})
                         print(f"  🎤 New audio/voice message from {user}", flush=True)
                     else:
-                        capture("ninja mention received", {"user": user})
                         print(
                             f"  👻 Acked + queued mention from {user}: {msg_text[:50]}...",
                             flush=True,
@@ -894,7 +821,7 @@ def main():
                         if should_react_with_ghost(reply, agent):
                             try:
                                 _reaction2 = os.environ.get(
-                                    "NINJA_AGENT_EMOJI", "🥷"
+                                    "PHANTOM_AGENT_EMOJI", "👻"
                                 ).strip()
                                 _get_slack().react(
                                     reply_ts, EMOJI_MAP.get(_reaction2, "ghost")
@@ -940,19 +867,11 @@ def main():
 
             # Process all pending messages in one batch
             if pending_messages:
-                capture(
-                    "ninja batch processing started",
-                    {"message_count": len(pending_messages)},
-                )
                 print(
                     f"\n📋 Processing {len(pending_messages)} pending message(s) in batch...",
                     flush=True,
                 )
                 run_batched_response(agent, pending_messages)
-
-            # Feed the loop: if there is open work and no orchestrator is
-            # running, launch one to work the queue. See agent-docs/LOOP.md.
-            maybe_launch_orchestrator()
 
             # Save state
             save_seen_messages(seen_messages)

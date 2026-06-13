@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-tools/pdx.py — Ninja × Pipedream LLM CLI wrapper
+tools/pdx.py — Phantom × Pipedream LLM CLI wrapper
 ==================================================
 
 A lightweight, JSON-first CLI that exposes a user's connected Pipedream
@@ -149,7 +149,7 @@ def _client():
         _fail(
             f"Pipedream not configured: {e}",
             exit_code=2,
-            hint="Run Ninja's Slack onboarding to install credentials, "
+            hint="Run Phantom's Slack onboarding to install credentials, "
             'or check ~/.agent_settings.json["pipedream"].',
         )
 
@@ -557,7 +557,7 @@ def _proxy_client():
         _fail(
             f"Pipedream proxy not configured: {e}",
             exit_code=2,
-            hint="Run Ninja's Slack onboarding to install credentials, "
+            hint="Run Phantom's Slack onboarding to install credentials, "
             'or check ~/.agent_settings.json["pipedream"].',
         )
 
@@ -861,7 +861,7 @@ def cmd_tools(args: argparse.Namespace) -> None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="pdx",
-        description="Ninja × Pipedream LLM CLI wrapper (JSON-first).",
+        description="Phantom × Pipedream LLM CLI wrapper (JSON-first).",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 

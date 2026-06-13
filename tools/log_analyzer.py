@@ -27,7 +27,7 @@ from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-from ninja.utils.pricing import get_pricing
+from phantom.utils.pricing import get_pricing
 
 
 def analyze_log(filepath: str) -> dict:

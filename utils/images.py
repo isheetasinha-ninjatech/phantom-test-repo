@@ -83,7 +83,7 @@ RECOMMENDED_SIZES = [
 ]
 
 # Default model for image generation — gpt-image-2 is the current state-of-the-art.
-DEFAULT_IMAGE_MODEL = "gpt-image"  # resolves to alias/openai/gpt-image-2.0
+DEFAULT_IMAGE_MODEL = "gpt-image"  # resolves to openai/openai/gpt-image-2
 
 # Reference-image limits
 MAX_REFERENCE_IMAGES = 16  # per OpenAI: gpt-image-2 supports up to 16 refs

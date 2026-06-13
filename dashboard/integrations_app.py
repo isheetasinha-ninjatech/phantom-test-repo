@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Ninja Integrations Dashboard  — port 9020
+Phantom Integrations Dashboard  — port 9020
 Full Pipedream Connect UI: browse apps, view actions, connect via OAuth.
 """
 
@@ -22,18 +22,18 @@ from flask_cors import CORS
 
 
 # ─── path setup ─────────────────────────────────────────────────────────────
-def _find_ninja_src() -> Optional[Path]:
+def _find_phantom_src() -> Optional[Path]:
     for c in [
-        Path("/workspace/ninja/src/ninja"),
+        Path("/workspace/phantom/src/phantom"),
         Path(__file__).parent.parent,
-        Path("/workspace/ninja"),
+        Path("/workspace/phantom"),
     ]:
         if (c / "utils" / "pipedream.py").exists():
             return c
     return None
 
 
-_src = _find_ninja_src()
+_src = _find_phantom_src()
 if _src and str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
@@ -125,7 +125,9 @@ APP_SLUG_TO_GH: Dict[str, str] = {
 
 
 def _gh_get(url: str) -> Any:
-    req = urllib.request.Request(url, headers={"User-Agent": "ninja-integrations/1.0"})
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "phantom-integrations/1.0"}
+    )
     with urllib.request.urlopen(req, timeout=8) as r:
         return json.loads(r.read())
 
@@ -178,7 +180,7 @@ def _fetch_actions_for_app(app_slug: str) -> List[Dict[str, Any]]:
                 mjs = (
                     urllib.request.urlopen(
                         urllib.request.Request(
-                            raw_url, headers={"User-Agent": "ninja/1.0"}
+                            raw_url, headers={"User-Agent": "phantom/1.0"}
                         ),
                         timeout=5,
                     )
@@ -367,7 +369,7 @@ _HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Ninja Integrations</title>
+<title>Phantom Integrations</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -684,7 +686,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
     <div class="sb-logo-icon">🔌</div>
     <div>
       <div class="sb-logo-title">Integrations</div>
-      <div class="sb-logo-sub">Ninja Connect</div>
+      <div class="sb-logo-sub">Phantom Connect</div>
     </div>
   </div>
   <div class="sb-nav">
@@ -781,7 +783,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
     </div>
   </div>
   <div class="ap-connect-row">
-    <div class="ap-connect-info" id="ap-connect-info">Authorise this app to use it with Ninja.</div>
+    <div class="ap-connect-info" id="ap-connect-info">Authorise this app to use it with Phantom.</div>
     <button class="ap-connect-btn" id="ap-connect-btn" onclick="triggerConnect()">Connect</button>
   </div>
   <div class="ap-search">
@@ -1051,7 +1053,7 @@ async function openPanel(slug, name, iconUrl) {
   } else {
     connectBtn.textContent = 'Connect';
     connectBtn.className = 'ap-connect-btn';
-    connectInfo.textContent = `Authorise ${name} to use its actions with Ninja.`;
+    connectInfo.textContent = `Authorise ${name} to use its actions with Phantom.`;
   }
   document.getElementById('ap-body').innerHTML = '<div class="loading-ctr"><div class="spin"></div></div>';
   document.getElementById('actions-panel').classList.add('open');
@@ -1261,5 +1263,5 @@ def index():
 # ─── Entry point ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.environ.get("INTEGRATIONS_PORT", 9020))
-    print(f"🔌 Ninja Integrations Dashboard → http://0.0.0.0:{port}", flush=True)
+    print(f"🔌 Phantom Integrations Dashboard → http://0.0.0.0:{port}", flush=True)
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

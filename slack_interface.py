@@ -532,7 +532,7 @@ def _fetch_pipedream_credentials_from_s3() -> Optional[Dict[str, str]]:
 
     Returns None on any non-fatal failure (missing object, malformed
     JSON, missing fields, S3 unreachable). Callers treat None as "no
-    creds yet" and move on — Ninja must never refuse to boot just
+    creds yet" and move on — phantom must never refuse to boot just
     because the Pipedream creds haven't been uploaded.
     """
     try:
@@ -604,7 +604,7 @@ def _install_pipedream_credentials(config_file: str) -> bool:
     agent_settings.json under a top-level ``pipedream`` key.
 
     This is idempotent: re-uploading a new file to S3 rotates the
-    credentials on the next ninja start; if nothing has changed the
+    credentials on the next phantom start; if nothing has changed the
     on-disk file is rewritten identically. If the S3 object is missing
     or invalid the existing ``pipedream`` block (if any) is preserved.
 
@@ -706,13 +706,48 @@ USER_CACHE_TTL = 120  # 2 minutes
 
 
 # ============================================================================
+# Channel Mirror Cache — full channel contents in S3
+# ============================================================================
+# Stores the complete message history for each channel. On read, if the cache
+# is fresh (< 2 min), returns directly. Otherwise fetches only the delta from
+# Slack, merges into the mirror, and writes back.
+#
+# S3 layout: s3://<bucket>/slack-channel/messages_<channel_id>.json
+# Payload:   {"fetched_at": "<UTC ISO>", "messages": [...]}
+
+
+def _read_channel_mirror(cache_key: str) -> Optional[List[Dict]]:
+    """
+    Read channel mirror from S3. Returns data regardless of age (stale OK).
+    Returns None only if the key doesn't exist or S3 is unreachable.
+
+    Args:
+        cache_key: S3 cache key
+    """
+    try:
+        _init_s3()
+        resp = _s3_client.get_object(Bucket=_s3_bucket, Key=_s3_key(cache_key))
+        payload = json.loads(resp["Body"].read().decode("utf-8"))
+        return payload.get("messages", [])
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            return None  # Cache doesn't exist yet
+        logging.debug(f"S3 mirror read error for '{cache_key}': {e}")
+    except (NoCredentialsError, BotoCoreError, FileNotFoundError) as e:
+        logging.debug(f"S3 mirror unavailable for '{cache_key}': {e}")
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        logging.debug(f"S3 mirror parse error for '{cache_key}': {e}")
+    return None
+
+
+# ============================================================================
 # Agent Configuration
 # ============================================================================
 # Each agent has a unique identity with custom avatar for Slack messages.
 # Avatars are hosted on a public URL and displayed in Slack when sending messages.
 
 AVATAR_BASE_URL = (
-    "https://sites.super.betamyninja.ai/03e7e7b7-929a-4476-a11d-d7acad3951a4/a90f52f3"
+    "https://sites.super.betamyninja.ai/44664728-914e-4c05-bdf2-d171ad4edcb3/82c331aa"
 )
 
 AGENT_AVATARS = {
@@ -748,13 +783,13 @@ AGENT_AVATARS = {
         "icon_url": f"{AVATAR_BASE_URL}/scout.png",
         "icon_emoji": ":mag:",
     },
-    "ninja": {
-        "name": os.environ.get("NINJA_AGENT_NAME", "Ninja"),
+    "phantom": {
+        "name": os.environ.get("PHANTOM_AGENT_NAME", "Phantom"),
         "role": "Browser Automation Agent",
-        "emoji": os.environ.get("NINJA_AGENT_EMOJI", "🥷"),
-        "color": "blue",
-        "icon_url": f"{AVATAR_BASE_URL}/ninja.png",
-        "icon_emoji": ":ninja:",
+        "emoji": os.environ.get("PHANTOM_AGENT_EMOJI", "👻"),
+        "color": "gray",
+        "icon_url": f"{AVATAR_BASE_URL}/phantom.png",
+        "icon_emoji": ":ghost:",
     },
 }
 
@@ -1120,7 +1155,7 @@ def get_slack_tokens(
 #   These appear in the message's 'files' array with mimetype starting with
 #   'audio/' (e.g., audio/webm, audio/mp4, audio/ogg) or subtype 'voice_message'.
 #
-#   When processing messages from the agent-event-cache service,
+#   When processing messages from get_channel_history() or get_thread_replies(),
 #   check for audio attachments and transcribe them using the utils transcript API:
 #
 #       from utils.litellm_client import get_config, api_url
@@ -1142,10 +1177,10 @@ class SlackClient:
     For higher-level operations, use the SlackInterface class instead.
 
     Audio/Voice Messages:
-        Messages retrieved via the agent-event-cache service may contain
-        audio/voice attachments. Check msg['files'] for entries where mimetype
-        starts with 'audio/' or subtype is 'voice_message'. Transcribe these
-        using the utils transcript API (LiteLLM gateway's
+        Messages retrieved via get_channel_history() or get_thread_replies()
+        may contain audio/voice attachments. Check msg['files'] for entries
+        where mimetype starts with 'audio/' or subtype is 'voice_message'.
+        Transcribe these using the utils transcript API (LiteLLM gateway's
         /v1/audio/transcriptions endpoint). See AGENT_PROTOCOL.md Section 5.
 
     Attributes:
@@ -1585,35 +1620,55 @@ class SlackClient:
         self, token: str, channel: str, limit: int = 50
     ) -> List[Dict]:
         """
-        Get message history from a channel via the agent-event-cache service.
+        Get message history from a channel via S3 cache (read-only).
+
+        Cache is populated by a separate process. This method never calls
+        the Slack API directly. Returns stale data if available, or empty
+        list if cache has no data for this channel yet.
 
         Args:
             token: Authentication token (unused — kept for API compatibility)
             channel: Channel ID (e.g., "C0AAAAMBR1R")
-            limit: Number of messages to return
+            limit: Number of messages to return (from the full mirror)
 
         Returns:
             List of message dicts with 'text', 'user', 'ts', etc.
             Messages are in reverse chronological order (newest first)
+
+        Audio/Voice Message Handling:
+            Messages may contain audio/voice attachments in the 'files' array.
+            Look for entries where mimetype starts with 'audio/' or subtype
+            is 'voice_message'. When detected, download the audio file using
+            the file's 'url_private_download' (with bot token auth) and
+            transcribe it using the utils transcript API:
+
+                from utils.litellm_client import get_config, api_url
+                cfg = get_config()
+                resp = requests.post(
+                    api_url("/v1/audio/transcriptions"),
+                    headers={"Authorization": f"Bearer {cfg['api_key']}"},
+                    files={"file": (name, audio_bytes, mimetype)},
+                    data={"model": "whisper-1"}
+                )
+                transcript = resp.json().get("text", "")
+
+            See AGENT_PROTOCOL.md Section 5 for the full audio handling protocol.
         """
-        try:
-            cache_client = AgentEventCacheClient()
-            request = GetMessagesRequest(
-                channel_id=channel, workspace_id="", limit=limit
-            )
-            response = cache_client.get_messages(request)
-            return response.messages
-        except Exception as e:
-            logging.warning(
-                f"agent-event-cache get_channel_history failed for {channel}: {e}"
-            )
-            return []
+        cache_key = f"messages_{channel}"
+        cached = _read_channel_mirror(cache_key)
+        if cached is not None:
+            return cached[:limit]
+        return []
 
     def get_thread_replies(
         self, token: str, channel: str, thread_ts: str, limit: int = 50
     ) -> List[Dict]:
         """
-        Get replies to a thread via the agent-event-cache service.
+        Get replies to a thread via S3 cache (read-only).
+
+        Cache is populated by a separate process. This method never calls
+        the Slack API directly. Returns stale data if available, or empty
+        list if cache has no data for this thread yet.
 
         Args:
             token: Authentication token (unused — kept for API compatibility)
@@ -1624,19 +1679,20 @@ class SlackClient:
         Returns:
             List of message dicts including parent and all replies.
             First message is the parent, rest are replies in chronological order.
+
+        Audio/Voice Message Handling:
+            Thread replies may also contain audio/voice attachments.
+            Apply the same transcription protocol as get_channel_history():
+            check msg['files'] for audio mimetypes or 'voice_message' subtype,
+            then transcribe via utils transcript API at /v1/audio/transcriptions.
+            See AGENT_PROTOCOL.md Section 5 for details.
         """
-        try:
-            cache_client = AgentEventCacheClient()
-            request = GetMessagesRequest(
-                channel_id=channel, workspace_id="", thread_ts=thread_ts, limit=limit
-            )
-            response = cache_client.get_messages(request)
-            return response.messages
-        except Exception as e:
-            logging.warning(
-                f"agent-event-cache get_thread_replies failed for {channel}/{thread_ts}: {e}"
-            )
-            return []
+        safe_ts = thread_ts.replace(".", "_")
+        cache_key = f"thread_{channel}_{safe_ts}"
+        cached = _read_channel_mirror(cache_key)
+        if cached is not None:
+            return cached[:limit]
+        return []
 
     def add_reaction(
         self, token: str, channel: str, timestamp: str, emoji: str
@@ -2493,7 +2549,9 @@ def cmd_upload(client: SlackClient, tokens: SlackTokens, args) -> None:
             file=sys.stderr,
         )
         print("\n💡 First, set your default agent:", file=sys.stderr)
-        print("   python slack_interface.py config --set-agent ninja", file=sys.stderr)
+        print(
+            "   python slack_interface.py config --set-agent phantom", file=sys.stderr
+        )
         print(
             f"\n🤖 Available agents: {', '.join(AGENT_AVATARS.keys())}", file=sys.stderr
         )
@@ -2502,7 +2560,9 @@ def cmd_upload(client: SlackClient, tokens: SlackTokens, args) -> None:
     if agent not in AGENT_AVATARS:
         print(f"❌ Invalid agent in config: {agent}", file=sys.stderr)
         print(f"\n💡 Set a valid agent:", file=sys.stderr)
-        print(f"   python slack_interface.py config --set-agent ninja", file=sys.stderr)
+        print(
+            f"   python slack_interface.py config --set-agent phantom", file=sys.stderr
+        )
         print(f"\n🤖 Valid agents: {', '.join(AGENT_AVATARS.keys())}", file=sys.stderr)
         sys.exit(1)
 
@@ -3007,7 +3067,7 @@ For more info: https://github.com/NinjaTech-AI/agent-team-logo-creator
     say_parser.add_argument("message", help="Message text")
     say_parser.add_argument("-t", "--thread", help="Thread timestamp for reply")
     say_parser.add_argument(
-        "-a", "--agent", help="Override default agent (e.g., ninja, nova, bolt)"
+        "-a", "--agent", help="Override default agent (e.g., phantom, nova, bolt)"
     )
     say_parser.add_argument(
         "--blocks",
@@ -3328,7 +3388,7 @@ class SlackInterface:
             do not.
           - By uploading without sharing and then posting the permalink
             ourselves, the visible-to-humans message author is the
-            configured agent (e.g. "Ninja") — not the default bot — and
+            configured agent (e.g. "Phantom") — not the default bot — and
             Slack unfurls the permalink into a preview of the file.
           - The file still lives in Slack (it appears in the workspace's
             Files section once unfurled and accessed), so no external
@@ -3533,7 +3593,10 @@ class SlackInterface:
 
     def get_history(self, channel: Optional[str] = None, limit: int = 50) -> List[Dict]:
         """
-        Get channel message history via the agent-event-cache service.
+        Get channel message history.
+
+        Uses the agent-event-cache service when enabled via sandbox_metadata.json,
+        otherwise falls back to the S3 channel mirror.
 
         Args:
             channel: Optional channel override (uses default if not specified)
@@ -3550,27 +3613,25 @@ class SlackInterface:
         # Resolve #channel-name to channel ID
         channel_id = self._resolve_channel_id(target_channel)
 
-        workspace_id = self.config.default_team_id or ""
-        try:
-            client = AgentEventCacheClient()
-            request = GetMessagesRequest(
-                workspace_id=workspace_id,
-                channel_id=channel_id,
-                limit=limit,
-            )
-            response = client.get_messages(request)
-            print(
-                f"[get_history] agent-event-cache OK: "
-                f"{response.total} messages from {channel_id}",
-                flush=True,
-            )
-            return response.messages
-        except Exception as e:
-            print(
-                f"[get_history] agent-event-cache failed for {channel_id}: {e}",
-                flush=True,
-            )
-            return []
+        # Try agent-event-cache service if enabled
+        if is_event_cache_enabled and is_event_cache_enabled():
+            try:
+                workspace_id = self.config.default_team_id or ""
+                client = AgentEventCacheClient()
+                request = GetMessagesRequest(
+                    workspace_id=workspace_id,
+                    channel_id=channel_id,
+                    limit=limit,
+                )
+                response = client.get_messages(request)
+                return response.messages
+            except Exception as e:
+                # Fall through to S3 on any failure (network, config, validation)
+                logging.debug(f"agent-event-cache unavailable, falling back to S3: {e}")
+
+        # Fallback: S3 channel mirror (existing behavior)
+        token = self.tokens.bot_token or self._token
+        return self.client.get_channel_history(token, channel_id, limit)
 
     def get_replies(
         self, thread_ts: str, channel: Optional[str] = None, limit: int = 50
@@ -3598,14 +3659,14 @@ class SlackInterface:
         return self.client.get_thread_replies(token, channel_id, thread_ts, limit)
 
     def react(
-        self, ts: str, emoji: str = "ninja", channel: Optional[str] = None
+        self, ts: str, emoji: str = "ghost", channel: Optional[str] = None
     ) -> bool:
         """
         Add an emoji reaction to a message.
 
         Args:
             ts: Message timestamp (ts field from the Slack message)
-            emoji: Emoji name without colons (default: "ninja")
+            emoji: Emoji name without colons (default: "ghost")
             channel: Optional channel override (uses default if not specified)
 
         Returns:
