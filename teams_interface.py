@@ -58,6 +58,7 @@ MCP_TOKEN_KEYS = (
     "Microsoft Teams",
     "MicrosoftTeams",
     "MS Teams",
+    "MSTeams"
     "Teams",
     "microsoft_teams",
     "Microsoft Graph",
