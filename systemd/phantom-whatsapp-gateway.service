@@ -1,0 +1,27 @@
+[Unit]
+Description=Phantom WhatsApp Gateway (Baileys, Ninja mode)
+Documentation=https://github.com/NinjaTech-AI/phantom
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/workspace/phantom/whatsapp
+ExecStartPre=/bin/sleep 5
+# The gateway is a TypeScript ESM process; npm start runs `node --loader …`
+# as configured in package.json. The gateway binds to 127.0.0.1 only and
+# requires a bearer token (WHATSAPP_GATEWAY_TOKEN) for every endpoint
+# except /health.
+ExecStart=/usr/bin/npm --silent start
+Restart=on-failure
+RestartSec=10s
+
+Environment=HOME=/root
+EnvironmentFile=-/workspace/phantom/.env
+StandardOutput=append:/workspace/logs/phantom-whatsapp-gateway.log
+StandardError=append:/workspace/logs/phantom-whatsapp-gateway.log
+SyslogIdentifier=phantom-whatsapp-gateway
+
+[Install]
+WantedBy=multi-user.target

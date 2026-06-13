@@ -26,6 +26,8 @@ from pathlib import Path
 # Import centralized agent configuration
 from agents_config import AGENTS
 
+from mode import get_phantom_mode
+
 REPO_ROOT = Path(__file__).parent
 CONFIG_PATH = Path.home() / ".agent_settings.json"
 LOCK_FILE = REPO_ROOT / ".orchestrator.lock"
@@ -612,12 +614,35 @@ def build_prompt(agent: dict, task: str = "") -> str:
 
     # Get default channel from config
     config = load_config()
-    channel = config.get(
-        "default_channel_name", config.get("default_channel", "#your-channel")
-    )
-    default_task = f"Check Slack {channel} for new requests, do your work, update your memory file and reflect and improve your toolkit as per agent-docs/ORCHESTRATOR.md."
+    mode = get_phantom_mode()
 
     memory = read_file(REPO_ROOT / "memory" / f"{agent['name'].lower()}_memory.md")
+
+    if mode == "whatsapp":
+        wa = config.get("whatsapp") if isinstance(config.get("whatsapp"), dict) else {}
+        channel = wa.get("channel_label") or wa.get("bound_chat_jid") or "(unbound)"
+        default_task = (
+            f"Check WhatsApp ({channel}) for new requests via "
+            "`python3 -m phantom.whatsapp_interface read --json`, do your work, "
+            "reply with `python3 -m phantom.whatsapp_interface say \"<text>\" "
+            "--group-jid <jid>` (or `--to <jid>` for DMs), then update your memory "
+            "file and reflect per agent-docs/ORCHESTRATOR.md."
+        )
+        docs_block = """1. **Your Specification:** `cat agent-docs/PHANTOM_SPEC.md`
+2. **Agent Protocol:** `cat agent-docs/AGENT_PROTOCOL.md`
+3. **WhatsApp Interface Docs:** `cat agent-docs/NINJA.md`
+4. **Workflow Docs:** `cat agent-docs/ORCHESTRATOR.md`
+5. **Pipedream Integrations:** `cat agent-docs/PIPEDREAM_CONNECT.md` — connected app discovery, OAuth dashboard, and `tools/pdx.py` (`pdx`) CLI tools"""
+    else:
+        channel = config.get(
+            "default_channel_name", config.get("default_channel", "#your-channel")
+        )
+        default_task = f"Check Slack {channel} for new requests, do your work, update your memory file and reflect and improve your toolkit as per agent-docs/ORCHESTRATOR.md."
+        docs_block = """1. **Your Specification:** `cat agent-docs/PHANTOM_SPEC.md`
+2. **Agent Protocol:** `cat agent-docs/AGENT_PROTOCOL.md`
+3. **Slack Interface Docs:** `cat agent-docs/SLACK_INTERFACE.md`
+4. **Workflow Docs:** `cat agent-docs/ORCHESTRATOR.md`
+5. **Pipedream Integrations:** `cat agent-docs/PIPEDREAM_CONNECT.md` — connected app discovery, OAuth dashboard, and `tools/pdx.py` (`pdx`) CLI tools"""
 
     return f"""# You are {agent['name']} {agent['emoji']}
 
@@ -625,6 +650,7 @@ def build_prompt(agent: dict, task: str = "") -> str:
 - **Name:** {agent['name']}
 - **Role:** {agent['role']}
 - **Emoji:** {agent['emoji']}
+- **Runtime mode:** {mode}
 
 ---
 
@@ -632,11 +658,7 @@ def build_prompt(agent: dict, task: str = "") -> str:
 
 You are currently running as the orchestrator agent. Before starting work, read these files for full context:
 
-1. **Your Specification:** `cat agent-docs/PHANTOM_SPEC.md`
-2. **Agent Protocol:** `cat agent-docs/AGENT_PROTOCOL.md`
-3. **Slack Interface Docs:** `cat agent-docs/SLACK_INTERFACE.md`
-4. **Workflow Docs:** `cat agent-docs/ORCHESTRATOR.md`
-5. **Pipedream Integrations:** `cat agent-docs/PIPEDREAM_CONNECT.md` — connected app discovery, OAuth dashboard, and `tools/pdx.py` (`pdx`) CLI tools
+{docs_block}
 
 ---
 
@@ -904,9 +926,17 @@ Configuration:
 
     # Show which agent we're running
     config = load_config()
+    mode = get_phantom_mode()
     logger.info(f"Config: {CONFIG_PATH}")
     logger.info(f"Agent: {agent['name']} ({agent['role']})")
-    if config.get("default_channel"):
+    logger.info(f"Mode: {mode}")
+    if mode == "whatsapp":
+        wa = config.get("whatsapp") if isinstance(config.get("whatsapp"), dict) else {}
+        if wa.get("bound_chat_jid"):
+            logger.info(f"WhatsApp chat: {wa.get('bound_chat_jid')}")
+        else:
+            logger.info("WhatsApp chat: (unbound — pair via dashboard or CLI)")
+    elif config.get("default_channel"):
         logger.info(f"Channel: {config.get('default_channel')}")
     log_file = (
         LOG_DIR / f"{agent['name'].lower()}_{datetime.now().strftime('%Y-%m-%d')}.log"
@@ -918,10 +948,16 @@ Configuration:
     # by phantom-monitor.service (systemd) or by the operator directly.
     # This process exits when the work cycle completes; systemd Restart=on-failure
     # will re-invoke it for the next cycle.
-    work_task = (
-        args.task
-        or "Check Slack for new requests, do your work, update your memory file."
-    )
+    if args.task:
+        work_task = args.task
+    elif mode == "whatsapp":
+        work_task = (
+            "Check WhatsApp for new requests via `python3 -m "
+            "phantom.whatsapp_interface read --json`, do your work, "
+            "update your memory file."
+        )
+    else:
+        work_task = "Check Slack for new requests, do your work, update your memory file."
     logger.info(f"🚀 Running work cycle: {work_task}")
     run_agent(agent, work_task)
 

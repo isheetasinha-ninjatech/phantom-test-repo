@@ -295,15 +295,20 @@ def cmd_say(args: argparse.Namespace) -> int:
             "use either --to (DM) or a group flag (--group-jid, --group, --conversation), not both\n"
         )
         return 2
+    # Apply the Ninja prefix here (not at the gateway) so manual ops sends stay literal.
+    message = args.message
+    if getattr(args, "ninja_prefix", False):
+        if not message.startswith("🥷 Ninja:"):
+            message = f"🥷 Ninja: {message}"
     if group_jid:
-        req_body: dict[str, Any] = {"group_jid": group_jid, "text": args.message}
+        req_body: dict[str, Any] = {"group_jid": group_jid, "text": message}
     else:
         try:
             to = resolve_whatsapp_to(args.to)
         except ValueError as e:
             sys.stderr.write(f"routing error: {e}\n")
             return 2
-        req_body = {"to": to, "text": args.message}
+        req_body = {"to": to, "text": message}
     status, raw, _ = _request(
         "POST",
         f"{base}/send",
@@ -448,6 +453,311 @@ def _read_messages_once(
     if status != 200:
         return status, {}, raw
     return status, _json_or_die(status, raw), raw
+
+
+def cmd_bind(args: argparse.Namespace) -> int:
+    """Bind / inspect the single-chat binding (Ninja mode).
+
+    With ``--status`` (or no flags) prints the current binding + active
+    pairing code. With ``--chat-jid`` calls ``POST /bind`` to set the
+    allowed chat.
+    """
+    base = _gateway_url(args).rstrip("/")
+    token = _gateway_token(args)
+
+    chat_jid = (getattr(args, "chat_jid", None) or "").strip()
+    show_status = getattr(args, "status", False) or not chat_jid
+
+    if chat_jid:
+        if not (chat_jid.endswith("@g.us") or chat_jid.endswith("@s.whatsapp.net")):
+            sys.stderr.write("chat-jid must end with @g.us or @s.whatsapp.net\n")
+            return 2
+        status, raw, _ = _request(
+            "POST", f"{base}/bind", token=token, body={"chat_jid": chat_jid}
+        )
+        if status == 0:
+            sys.stderr.write(f"gateway not reachable at {base}\n")
+            return 2
+        if status == 401:
+            sys.stderr.write("unauthorized — set WHATSAPP_GATEWAY_TOKEN or pass --gateway-token\n")
+            return 2
+        body = _json_or_die(status, raw)
+        if status != 200 or not body.get("ok"):
+            sys.stderr.write(f"bind failed: status={status} body={body}\n")
+            return 1
+        print(json.dumps(body))
+
+    if show_status:
+        s_status, s_raw, _ = _request("GET", f"{base}/status", token=token)
+        if s_status == 401:
+            sys.stderr.write("unauthorized — set WHATSAPP_GATEWAY_TOKEN or pass --gateway-token\n")
+            return 2
+        if s_status != 200:
+            sys.stderr.write(f"status failed: {s_status} {s_raw[:200]!r}\n")
+            return 1
+        st = _json_or_die(s_status, s_raw)
+        # Best-effort pairing-code fetch (no error if unsupported).
+        p_status, p_raw, _ = _request("GET", f"{base}/pairing_code", token=token)
+        pairing = _json_or_die(p_status, p_raw) if p_status == 200 else {}
+        if args.json:
+            out = {
+                "connection": st.get("connection"),
+                "ninja_state": st.get("ninja_state"),
+                "bound_chat_jid": st.get("bound_chat_jid"),
+                "bound_via": st.get("bound_via"),
+                "bound_at": st.get("bound_at"),
+                "pairing_code": pairing.get("code"),
+                "pairing_code_expires_at": pairing.get("expires_at"),
+                "bind_method": st.get("bind_method"),
+                "bind_method_source": st.get("bind_method_source"),
+                "last_active_method": st.get("last_active_method"),
+                "last_error": st.get("last_error"),
+                "invite_code": st.get("invite_code"),
+                "invite_code_error": st.get("invite_code_error"),
+                "grace_remaining_ms": st.get("grace_remaining_ms"),
+            }
+            print(json.dumps(out, indent=2))
+        else:
+            print(f"connection:    {st.get('connection')}")
+            print(f"ninja_state:   {st.get('ninja_state')}")
+            print(f"bound_chat:    {st.get('bound_chat_jid') or '(none)'}")
+            if st.get("bound_via"):
+                print(f"bound_via:     {st.get('bound_via')}")
+            if st.get("bind_method"):
+                print(f"bind_method:   {st.get('bind_method')} (source={st.get('bind_method_source')})")
+            if st.get("invite_code"):
+                print(f"invite_link:   https://chat.whatsapp.com/{st.get('invite_code')}")
+            elif st.get("invite_code_error"):
+                print(f"invite_link:   (unavailable — {st.get('invite_code_error')})")
+            if st.get("last_error"):
+                print(f"last_error:    {st.get('last_error')}")
+            if pairing.get("code"):
+                print(f"pairing_code:  {pairing.get('code')}")
+                print(f"  expires_at:  {_iso_utc(pairing.get('expires_at'))}")
+            elif not st.get("bound_chat_jid") and st.get("ninja_state") == "waiting_for_chat_pairing":
+                print("pairing_code:  (none — gateway not yet open or already expired)")
+    return 0
+
+
+def react(
+    base: str,
+    token: Optional[str],
+    message_key: str,
+    emoji: str,
+    *,
+    from_me: bool = False,
+    participant: Optional[str] = None,
+    timeout: float = 10.0,
+) -> bool:
+    """POST /react. Best-effort: returns False on any error, never raises."""
+    if not message_key or not emoji:
+        return False
+    body: dict[str, Any] = {
+        "message_key": message_key,
+        "emoji": emoji,
+        "from_me": from_me,
+    }
+    if participant:
+        body["participant"] = participant
+    try:
+        status, _raw, _ = _request(
+            "POST", f"{base.rstrip('/')}/react", token=token, body=body, timeout=timeout
+        )
+        return status == 200
+    except Exception:
+        return False
+
+
+def cmd_react(args: argparse.Namespace) -> int:
+    base = _gateway_url(args).rstrip("/")
+    token = _gateway_token(args)
+    ok = react(
+        base,
+        token,
+        args.message_key,
+        args.emoji,
+        from_me=bool(args.from_me),
+        participant=args.participant,
+    )
+    if not ok:
+        sys.stderr.write(f"react failed for message_key={args.message_key}\n")
+        return 1
+    print(json.dumps({"ok": True}))
+    return 0
+
+
+def cmd_fetch_media(args: argparse.Namespace) -> int:
+    """Download decrypted media bytes from GET /media/:id to a local file."""
+    base = _gateway_url(args).rstrip("/")
+    token = _gateway_token(args)
+    media_id = (args.media_id or "").strip()
+    if not media_id:
+        sys.stderr.write("--media-id required\n")
+        return 2
+    out_path = Path(args.out).expanduser() if args.out else Path.cwd() / f"wa_{media_id}"
+    url = f"{base}/media/{media_id}"
+    headers: dict[str, str] = {"Accept": "*/*"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=30.0) as resp:
+            status = resp.status
+            body = resp.read()
+            ctype = resp.headers.get("Content-Type", "")
+    except urllib.error.HTTPError as e:
+        sys.stderr.write(f"fetch-media failed: status={e.code} body={e.read()[:200]!r}\n")
+        return 1
+    except urllib.error.URLError as e:
+        sys.stderr.write(f"gateway not reachable at {base}: {e.reason}\n")
+        return 2
+    if status != 200:
+        sys.stderr.write(f"fetch-media failed: status={status}\n")
+        return 1
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(body)
+    try:
+        out_path.chmod(0o600)
+    except OSError:
+        pass
+    print(json.dumps({"ok": True, "path": str(out_path), "bytes": len(body), "mimetype": ctype}))
+    return 0
+
+
+def _multipart_encode(
+    fields: list[tuple[str, str]],
+    file_field: str,
+    file_name: str,
+    file_mime: str,
+    file_bytes: bytes,
+) -> tuple[bytes, str]:
+    """Hand-roll a multipart/form-data body. Avoids extra deps."""
+    import secrets
+
+    boundary = "----PhantomBoundary" + secrets.token_hex(8)
+    crlf = b"\r\n"
+    out = bytearray()
+    for name, value in fields:
+        out += f"--{boundary}".encode() + crlf
+        out += f'Content-Disposition: form-data; name="{name}"'.encode() + crlf + crlf
+        out += value.encode("utf-8") + crlf
+    out += f"--{boundary}".encode() + crlf
+    out += (
+        f'Content-Disposition: form-data; name="{file_field}"; '
+        f'filename="{file_name}"'
+    ).encode() + crlf
+    out += f"Content-Type: {file_mime}".encode() + crlf + crlf
+    out += file_bytes + crlf
+    out += f"--{boundary}--".encode() + crlf
+    return bytes(out), f"multipart/form-data; boundary={boundary}"
+
+
+def cmd_upload(args: argparse.Namespace) -> int:
+    """Send a local file as an image or document via POST /send_media."""
+    base = _gateway_url(args).rstrip("/")
+    token = _gateway_token(args)
+
+    kind = (args.kind or "").lower().strip()
+    if kind not in ("image", "document"):
+        sys.stderr.write("--kind must be 'image' or 'document'\n")
+        return 2
+    file_path = Path(args.file).expanduser()
+    if not file_path.exists() or not file_path.is_file():
+        sys.stderr.write(f"file not found: {file_path}\n")
+        return 2
+    file_bytes = file_path.read_bytes()
+
+    # Mimetype: --mimetype > python's mimetypes guess > sensible default.
+    mimetype = (args.mimetype or "").strip()
+    if not mimetype:
+        import mimetypes
+
+        guess, _ = mimetypes.guess_type(str(file_path))
+        mimetype = guess or ("image/jpeg" if kind == "image" else "application/octet-stream")
+
+    # Synthesized caption (override #4): when --ninja-prefix is set and the
+    # caller didn't supply one, synthesize a short notice so the human knows
+    # it's a bot upload. Explicit captions get the prefix prepended.
+    caption = args.caption if args.caption is not None else ""
+    if args.ninja_prefix:
+        if not caption:
+            caption = f"🥷 Ninja: shared {'an' if kind == 'image' else 'a'} {kind}"
+        elif not caption.startswith("🥷 Ninja:"):
+            caption = f"🥷 Ninja: {caption}"
+
+    # Route resolution mirrors `cmd_say`.
+    try:
+        group_jid = resolve_group_target(args)
+    except ValueError as e:
+        sys.stderr.write(f"group target error: {e}\n")
+        return 2
+    if group_jid and getattr(args, "to", None):
+        sys.stderr.write(
+            "use either --to (DM) or a group flag (--group-jid, --group, --conversation), not both\n"
+        )
+        return 2
+
+    fields: list[tuple[str, str]] = [("kind", kind), ("mimetype", mimetype)]
+    if caption:
+        fields.append(("caption", caption))
+    # filename: explicit > basename. Required server-side for documents.
+    filename = (args.filename or file_path.name).strip()
+    fields.append(("filename", filename))
+    if group_jid:
+        fields.append(("group_jid", group_jid))
+    else:
+        try:
+            to = resolve_whatsapp_to(args.to)
+        except ValueError as e:
+            sys.stderr.write(f"routing error: {e}\n")
+            return 2
+        fields.append(("to", to))
+
+    body, ctype = _multipart_encode(fields, "file", filename, mimetype, file_bytes)
+    headers = {"Content-Type": ctype, "Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(f"{base}/send_media", data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=60.0) as resp:
+            status = resp.status
+            raw = resp.read()
+    except urllib.error.HTTPError as e:
+        status = e.code
+        raw = e.read()
+    except urllib.error.URLError as e:
+        sys.stderr.write(f"gateway not reachable at {base}: {e.reason}\n")
+        return 2
+    if status == 401:
+        sys.stderr.write("unauthorized — set WHATSAPP_GATEWAY_TOKEN or pass --gateway-token\n")
+        return 2
+    if status == 409:
+        sys.stderr.write("gateway is up but not linked yet; run onboard first\n")
+        return 2
+    parsed = _json_or_die(status, raw)
+    if status != 200 or not parsed.get("ok"):
+        sys.stderr.write(f"upload failed: status={status} body={parsed}\n")
+        return 1
+    print(json.dumps(parsed))
+    return 0
+
+
+def cmd_unbind(args: argparse.Namespace) -> int:
+    base = _gateway_url(args).rstrip("/")
+    token = _gateway_token(args)
+    status, raw, _ = _request("POST", f"{base}/unbind", token=token)
+    if status == 0:
+        sys.stderr.write(f"gateway not reachable at {base}\n")
+        return 2
+    if status == 401:
+        sys.stderr.write("unauthorized — set WHATSAPP_GATEWAY_TOKEN or pass --gateway-token\n")
+        return 2
+    body = _json_or_die(status, raw)
+    if status != 200 or not body.get("ok"):
+        sys.stderr.write(f"unbind failed: status={status} body={body}\n")
+        return 1
+    print(json.dumps(body))
+    return 0
 
 
 def cmd_read(args: argparse.Namespace) -> int:
@@ -596,6 +906,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_say.add_argument("--to", help="explicit DM destination E.164")
     p_say.add_argument("--group-jid", help="full group JID (120363…@g.us)")
     p_say.add_argument(
+        "--ninja-prefix",
+        action="store_true",
+        help="prepend '🥷 Ninja: ' to the message so recipients see it as a bot reply "
+        "(used by monitor_whatsapp.py; manual sends stay literal by default)",
+    )
+    p_say.add_argument(
         "--group",
         help="group local id, or 'last' for whatsapp.last_group_jid from settings",
     )
@@ -624,6 +940,60 @@ def _build_parser() -> argparse.ArgumentParser:
     p_read.add_argument("--json", action="store_true", help="print raw JSON instead of human lines")
     p_read.add_argument("--no-save", action="store_true", help="do not advance the stored cursor")
     p_read.set_defaults(func=cmd_read)
+
+    p_bind = sub.add_parser(
+        "bind",
+        help="set or inspect the single-chat binding (Ninja mode)",
+    )
+    p_bind.add_argument(
+        "--chat-jid",
+        help="WhatsApp chat JID to bind (e.g. 120363…@g.us or 1234567890@s.whatsapp.net)",
+    )
+    p_bind.add_argument(
+        "--status",
+        action="store_true",
+        help="print current binding + pairing code (default when --chat-jid is omitted)",
+    )
+    p_bind.add_argument("--json", action="store_true", help="print raw JSON instead of human lines")
+    p_bind.set_defaults(func=cmd_bind)
+
+    p_unbind = sub.add_parser("unbind", help="clear the single-chat binding (Ninja mode)")
+    p_unbind.set_defaults(func=cmd_unbind)
+
+    p_fm = sub.add_parser(
+        "fetch-media",
+        help="download decrypted media bytes for a media_id (writes 0600 file)",
+    )
+    p_fm.add_argument("--media-id", required=True, help="media_id from `read --json` (sha-prefix)")
+    p_fm.add_argument("--out", help="output path (default ./wa_<media_id>)")
+    p_fm.set_defaults(func=cmd_fetch_media)
+
+    p_up = sub.add_parser(
+        "upload",
+        help="send a local file as image or document (multipart POST /send_media)",
+    )
+    p_up.add_argument("--kind", required=True, help="image | document")
+    p_up.add_argument("--file", required=True, help="path to the local file to upload")
+    p_up.add_argument("--caption", help="caption text (image/pdf). Optional.")
+    p_up.add_argument("--filename", help="override the filename sent to WhatsApp (default basename)")
+    p_up.add_argument("--mimetype", help="override mimetype (default: guess from extension)")
+    p_up.add_argument("--to", help="DM destination E.164")
+    p_up.add_argument("--group-jid", help="full group JID (120363…@g.us)")
+    p_up.add_argument("--group", help="group local id, or 'last'")
+    p_up.add_argument("--conversation", help="group conversation_id ({self}:g:{group_local})")
+    p_up.add_argument(
+        "--ninja-prefix",
+        action="store_true",
+        help="prefix the caption with '🥷 Ninja:' (synthesizes one if --caption is empty)",
+    )
+    p_up.set_defaults(func=cmd_upload)
+
+    p_react = sub.add_parser("react", help="add/replace a reaction on an inbox message")
+    p_react.add_argument("--message-key", required=True, help="message_key from `read --json` (e.g. 1234@s.whatsapp.net:3EB0...)")
+    p_react.add_argument("--emoji", required=True, help="reaction emoji (use empty to remove)")
+    p_react.add_argument("--from-me", action="store_true", help="original message was sent by us (set for from_me items)")
+    p_react.add_argument("--participant", help="sender JID inside a group bind (required for group reactions; from inbox.participant)")
+    p_react.set_defaults(func=cmd_react)
 
     p_group = sub.add_parser("group", help="group operations")
     g_sub = p_group.add_subparsers(dest="group_cmd", required=True)

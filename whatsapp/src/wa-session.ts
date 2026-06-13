@@ -19,6 +19,25 @@ export type ConnState = "starting" | "qr" | "connecting" | "open" | "logged_out"
 export interface SessionEvents {
   onUpsert?: (m: unknown) => void;
   onHistorySet?: (h: unknown) => void;
+  /**
+   * Fired after the socket transitions to connection=open. Used by Ninja
+   * mode to start the bind flow when no chat is bound yet.
+   * Not used by the SN-3408 POC path.
+   */
+  onOpen?: () => void;
+  /**
+   * Fired whenever the socket transitions to connection=close (including
+   * logout). Used by the bind flow to cancel any pending grace timer.
+   */
+  onClose?: () => void;
+  /**
+   * Fired when WhatsApp reports DisconnectReason.loggedOut. The auth dir
+   * has already been wiped on disk by handleLoggedOut. Server wires this
+   * to BindStore.clear() so the in-memory chat JID (and therefore the
+   * dashboard `bound_chat_jid` field) clears too — otherwise leaked
+   * snapshot state remains visible until process restart.
+   */
+  onLoggedOut?: () => void;
 }
 
 export interface SessionOptions {
@@ -147,6 +166,44 @@ export class WaSession {
     this.state = "closed";
   }
 
+  /**
+   * Operator-driven unlink. Calls `sock.logout()` so WhatsApp drops the
+   * linked-device session, wipes the local auth dir, then reconnects so
+   * a fresh QR is emitted. Used by POST /unlink to switch accounts
+   * without restarting the gateway process.
+   */
+  async unlink(): Promise<void> {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    try {
+      await this.sock?.logout();
+    } catch (e) {
+      logger.warn({ err: String(e) }, "sock.logout() failed; wiping auth anyway");
+    }
+    try {
+      this.sock?.end(undefined);
+    } catch {
+      // ignore
+    }
+    try {
+      await rm(this.authDir, { recursive: true, force: true });
+    } catch (e) {
+      logger.error({ err: String(e) }, "failed to wipe auth dir on unlink");
+    }
+    this.latestQr = null;
+    this.selfE164 = null;
+    this.sock = null;
+    this.state = "starting";
+    this.reconnectAttempt = 0;
+    // Kick off a fresh connect so /qr starts returning the new QR.
+    this.connect().catch((e) => {
+      logger.error({ err: String(e) }, "reconnect after unlink failed");
+      this.scheduleReconnect(true);
+    });
+  }
+
   private async connect(): Promise<void> {
     const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
     const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined as any }));
@@ -157,7 +214,7 @@ export class WaSession {
       logger: logger as any,
       printQRInTerminal: false,
       version,
-      browser: ["Phantom POC", "Chrome", "1.0"],
+      browser: ["Ninja App", "Chrome", "1.0"],
       syncFullHistory: this.syncFullHistory,
       markOnlineOnConnect: false,
     });
@@ -196,9 +253,23 @@ export class WaSession {
           },
           "linked",
         );
+        if (this.events.onOpen) {
+          try {
+            this.events.onOpen();
+          } catch (e) {
+            logger.warn({ err: String(e) }, "onOpen handler failed");
+          }
+        }
       } else if (connection === "close") {
         const err = (lastDisconnect?.error as BoomLike | undefined)?.output?.statusCode;
         logger.warn({ event: "close", code: err }, "disconnected");
+        if (this.events.onClose) {
+          try {
+            this.events.onClose();
+          } catch (e) {
+            logger.warn({ err: String(e) }, "onClose handler failed");
+          }
+        }
         if (err === DisconnectReason.loggedOut) {
           this.state = "logged_out";
           this.latestQr = null;
@@ -226,10 +297,41 @@ export class WaSession {
   private async handleLoggedOut(): Promise<void> {
     try {
       await rm(this.authDir, { recursive: true, force: true });
-      logger.warn({ authDir: this.authDir }, "auth dir cleared after logout; relink required");
+      logger.warn({ authDir: this.authDir }, "auth dir cleared after logout; auto-restarting for fresh QR");
     } catch (e) {
       logger.error({ err: String(e) }, "failed to clear auth dir");
     }
+    // Notify server so it can clear BindStore's in-memory chat JID. Without
+    // this, /status keeps returning the (now stale) bound_chat_jid and the
+    // dashboard still shows "bound chat" even though disk is wiped. This
+    // matters for snapshot-leak recovery: installer boots with publisher's
+    // bound.json in the snapshot, WhatsApp rejects the stale creds → we
+    // land here, and the dashboard should immediately show a clean slate.
+    if (this.events.onLoggedOut) {
+      try {
+        this.events.onLoggedOut();
+      } catch (e) {
+        logger.warn({ err: String(e) }, "onLoggedOut handler failed");
+      }
+    }
+    // Self-heal: with creds wiped, restart the socket so Baileys emits a
+    // fresh QR. Without this, `logged_out` is terminal and operators must
+    // `systemctl restart phantom-whatsapp-gateway` to re-pair.
+    if (this.shuttingDown) return;
+    try {
+      this.sock?.end(undefined);
+    } catch {
+      // ignore
+    }
+    this.latestQr = null;
+    this.selfE164 = null;
+    this.sock = null;
+    this.state = "starting";
+    this.reconnectAttempt = 0;
+    this.connect().catch((e) => {
+      logger.error({ err: String(e) }, "reconnect after logout failed");
+      this.scheduleReconnect(true);
+    });
   }
 
   private scheduleReconnect(longDelay = false): void {
