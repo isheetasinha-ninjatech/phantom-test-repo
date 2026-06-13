@@ -9,7 +9,7 @@ Type=simple
 User=root
 WorkingDirectory=/workspace/phantom
 ExecStartPre=/bin/sleep 10
-ExecStart=/usr/local/bin/python -m phantom.teams_monitor.py --interval 30
+ExecStart=/usr/local/bin/python -m phantom.teams_monitor --interval 30
 Restart=always
 RestartSec=30s
 
