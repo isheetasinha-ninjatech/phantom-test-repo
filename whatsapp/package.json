@@ -1,0 +1,30 @@
+{
+  "name": "whatsapp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phantom WhatsApp POC gateway (Baileys + HTTP). Localhost-only by default.",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "start": "node --enable-source-maps dist/server.js",
+    "dev": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^8.3.0",
+    "baileys": "7.0.0-rc13",
+    "fastify": "^4.28.1",
+    "link-preview-js": "^3.0.5",
+    "pino": "^9.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/qrcode": "^1.5.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,5 +1,5 @@
 [Unit]
-Description=Phantom Teams Monitor
+Description=Phantom Slack Monitor
 Documentation=https://github.com/NinjaTech-AI/phantom
 After=network.target supervisor.service
 Wants=supervisor.service
@@ -7,18 +7,18 @@ Wants=supervisor.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/workspace
+WorkingDirectory=/workspace/phantom
 ExecStartPre=/bin/sleep 10
-ExecStart=/usr/local/bin/python -m phantom.teams_monitor --interval 30
+ExecStart=/usr/local/bin/python monitor.py
 Restart=always
 RestartSec=30s
 
 Environment=HOME=/root
 Environment=DISPLAY=:99
 Environment=PYTHONPATH=/workspace
-StandardOutput=append:/workspace/logs/phantom-teams-monitor.log
-StandardError=append:/workspace/logs/phantom-teams-monitor.log
-SyslogIdentifier=phantom-teams-monitor
+StandardOutput=append:/workspace/logs/phantom-monitor.log
+StandardError=append:/workspace/logs/phantom-monitor.log
+SyslogIdentifier=phantom-monitor
 
 [Install]
 WantedBy=multi-user.target
