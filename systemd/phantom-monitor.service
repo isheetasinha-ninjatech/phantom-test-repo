@@ -6,14 +6,14 @@ Wants=supervisor.service
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/workspace/phantom
+User=phantom
+WorkingDirectory=/workspace
 ExecStartPre=/bin/sleep 10
 ExecStart=/usr/local/bin/python -m phantom.teams_monitor --interval 30
 Restart=always
 RestartSec=30s
 
-Environment=HOME=/root
+Environment=HOME=/home/phantom
 Environment=DISPLAY=:99
 Environment=PYTHONPATH=/workspace
 StandardOutput=append:/workspace/logs/phantom-teams-monitor.log

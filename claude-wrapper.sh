@@ -5,6 +5,7 @@ export HOME="${PHANTOM_CLAUDE_HOME:-${HOME:-/root}}"
 export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 export USER="${USER:-root}"
 export TERM=xterm-256color
+export IS_SANDBOX=1
 
 # Disable Claude Code's internal cron so sessions launched through this
 # wrapper rely on external cron instead.
