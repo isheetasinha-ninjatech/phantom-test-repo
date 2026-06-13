@@ -8,6 +8,7 @@
 - Inbox: `read --json` → empty (`items: []`). No new requests.
 - Bind status: `connection: qr`, `ninja_state: waiting_for_qr`, `bound_chat_jid: null` — **not linked**. Needs a human to scan the QR (dashboard `/whatsapp` panel or gateway `GET /qr`) before any messages flow.
 - No actionable work; cannot reply (no chat bound). Recorded here only.
+- Follow-up pass (later 2026-06-13): re-checked — unchanged. Inbox empty, still `waiting_for_qr`, no bound chat. Gateway restarted again (new `inbox_epoch`). Still blocked on human QR scan.
 
 ## Technical Decisions
 <!-- Technical choices and their rationale -->
