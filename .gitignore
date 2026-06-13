@@ -1,0 +1,22 @@
+# Runtime state files (not tracked)
+.orchestrator.lock
+.browser_server.pid
+.session_alert
+
+# Sensitive files
+settings.json
+.env*
+
+# Browser data
+phantom/browser_data/
+phantom/sessions/_tmp_cookies.db
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+
+# OS
+.DS_Store

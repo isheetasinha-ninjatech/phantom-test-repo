@@ -1,0 +1,34 @@
+[Unit]
+Description=Remove superninja config and sync /workspace/phantom to git
+Documentation=https://github.com/NinjaTech-AI/phantom
+Before=supervisor.service
+After=local-fs.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c '\
+  rm -f /etc/supervisor/conf.d/_superninja_startup.conf /workspace/_superninja_startup.conf && \
+  SUPERVISOR_CONF="/etc/supervisor/conf.d/supervisord.conf" && \
+  if [ -f "$SUPERVISOR_CONF" ]; then \
+    sed -i "s|x11vnc -display :99 -forever -shared -rfbauth /root/.vnc/passwd -rfbport 5901|x11vnc -display :99 -forever -shared -nopw -rfbport 5901|g" "$SUPERVISOR_CONF" && \
+    echo "phantom-sync: VNC password requirement removed"; \
+  fi && \
+  echo "phantom-sync: waiting for /dev/shm/mcp-token..." && \
+  while [ ! -f /dev/shm/mcp-token ]; do sleep 2; done && \
+  echo "phantom-sync: token found, authenticating with GitHub..." && \
+  if [ ! -d /workspace/phantom/.git ]; then echo "phantom-sync: /workspace/phantom not yet cloned, skipping"; exit 0; fi && \
+  cd /workspace/phantom && \
+  if [ ! -f /usr/local/bin/git-askpass.sh ]; then echo "phantom-sync: git-askpass.sh not found, skipping"; exit 0; fi && \
+  export GIT_ASKPASS='/usr/local/bin/git-askpass.sh' && \
+  git -c user.name=phantom -c user.email=phantom@ninjatech.ai add -A && \
+  git -c user.name=phantom -c user.email=phantom@ninjatech.ai diff --cached --quiet || \
+  git -c user.name=phantom -c user.email=phantom@ninjatech.ai commit -m "phantom-sync: auto-commit workspace changes" && \
+  git -c user.name=phantom -c user.email=phantom@ninjatech.ai push'
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=phantom-sync
+
+[Install]
+WantedBy=multi-user.target

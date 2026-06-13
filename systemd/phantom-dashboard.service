@@ -1,0 +1,23 @@
+[Unit]
+Description=Phantom Agent Dashboard
+Documentation=https://github.com/NinjaTech-AI/phantom
+After=network.target supervisor.service phantom.service
+Wants=phantom.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/workspace/phantom/dashboard
+ExecStart=/usr/local/bin/python app.py
+Restart=on-failure
+RestartSec=10s
+
+Environment=HOME=/root
+Environment=DASHBOARD_PORT=9000
+Environment=PYTHONPATH=/workspace:/workspace/phantom
+StandardOutput=append:/workspace/logs/phantom-dashboard.log
+StandardError=append:/workspace/logs/phantom-dashboard.log
+SyslogIdentifier=phantom-dashboard
+
+[Install]
+WantedBy=multi-user.target
