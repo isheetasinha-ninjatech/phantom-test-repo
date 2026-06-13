@@ -1,6 +1,6 @@
 # WhatsApp Interface — Testing Runbook (POC)
 
-End-to-end manual test plan for the WhatsApp POC: **onboard**, **read**, **say**, **group list**, **group create**. The flows assume the gateway in `src/phantom/whatsapp/` and the CLI `python -m phantom.whatsapp_interface`.
+End-to-end manual test plan for the WhatsApp POC: **onboard**, **read**, **say**, **group list**, **group create**. The flows assume the gateway in `src/phantom/whatsapp_gateway/` and the CLI `python -m phantom.whatsapp_interface`.
 
 > ⚠️ **Personal-account warning.** Linked-device automation on a personal WhatsApp number can trigger spam limits or bans. Keep volume low, restrict destinations to a single trusted test contact via `WHATSAPP_ALLOWED_TO`, and prefer a dedicated phone + eSIM when possible.
 
@@ -24,7 +24,7 @@ export PEER_E164=15551112222     # test contact (digits only)
 Install once:
 
 ```bash
-cd src/phantom/whatsapp
+cd src/phantom/whatsapp_gateway
 npm install
 cd -
 ```
@@ -36,7 +36,7 @@ cd -
 ### 1a. Start the gateway
 
 ```bash
-cd src/phantom/whatsapp
+cd src/phantom/whatsapp_gateway
 WHATSAPP_AUTH_DIR=./auth/default \
 WHATSAPP_GATEWAY_TOKEN="$WHATSAPP_GATEWAY_TOKEN" \
 WHATSAPP_ALLOWED_TO="$PEER_E164" \
@@ -209,7 +209,7 @@ Runbook A — fresh pair (full bootstrap test):
 
 ```bash
 # 1. Stop the gateway, wipe auth so we get a fresh pairing.
-rm -rf src/phantom/whatsapp/auth/default
+rm -rf src/phantom/whatsapp_gateway/auth/default
 
 # 2. Restart with sync enabled. WHATSAPP_LOG_LEVEL=info shows each
 #    "history_set_received" / "upsert" event as it arrives.
@@ -308,8 +308,6 @@ PYTHONPATH=src python -m phantom.whatsapp_interface say "hello" \
 ## 4. Group create
 
 > Group create is **disabled by default**. The gateway process must be (re)started with `WHATSAPP_ALLOW_GROUP_CREATE=1`. Setting it on the CLI has no effect.
->
-> Note: this flag gates only the **manual** `POST /groups/create` HTTP route + CLI verb. The Ninja `auto_group` bind method (default — see NINJA.md §3b) creates a self-only group at bind time without consulting this flag, because the operator already opted in via `WHATSAPP_BIND_METHOD`.
 
 ### 4a. Negative path (default: disabled)
 
@@ -333,7 +331,7 @@ Exit code: `1`.
 ### 4b. Restart gateway with group-create enabled
 
 ```bash
-cd src/phantom/whatsapp
+cd src/phantom/whatsapp_gateway
 WHATSAPP_AUTH_DIR=./auth/default \
 WHATSAPP_GATEWAY_TOKEN="$WHATSAPP_GATEWAY_TOKEN" \
 WHATSAPP_ALLOWED_TO="$PEER_E164" \
@@ -421,45 +419,6 @@ For personal-account safety, restart the gateway **without** `WHATSAPP_ALLOW_GRO
 
 ---
 
-## 4.5 Media (voice / image / pdf)
-
-Inbound media is auto-decrypted by the gateway and surfaced on each inbox
-record as `media_kind` + `media_id`. The agent fetches bytes locally and
-uploads back through the same CLI.
-
-```bash
-# 1. Send a voice note / image / PDF to the bound chat from your phone.
-# 2. List the new record — note the media_id and media_kind fields.
-python3 -m phantom.whatsapp_interface read --json --limit 3
-
-# 3. Pull decrypted bytes to a local file (0600).
-python3 -m phantom.whatsapp_interface fetch-media \
-    --media-id <id> --out /tmp/wa_<id>
-
-# 4. Upload a local file back.
-python3 -m phantom.whatsapp_interface upload \
-    --kind image --file /tmp/reply.png --caption "look at this" \
-    --ninja-prefix --group-jid 120363…@g.us
-
-python3 -m phantom.whatsapp_interface upload \
-    --kind document --file /tmp/report.pdf --filename report.pdf \
-    --to 15551112222
-```
-
-Notes:
-
-- `--ninja-prefix` mirrors `say --ninja-prefix`. When no `--caption` is
-  supplied it synthesizes `🥷 Ninja: shared a/an <kind>` so the human always
-  sees a bot tag.
-- Mimetype is guessed from the file extension; override with `--mimetype`.
-- Bytes evict from `WHATSAPP_MEDIA_DIR` after `WHATSAPP_MEDIA_TTL_SECONDS`
-  (default 1h). Re-send from the phone if the agent comes back to a stale id.
-- Voice notes longer than `WHATSAPP_MAX_AUDIO_SECONDS` (default 600s) are
-  rejected pre-decrypt; the inbox record's `text` becomes
-  `[voice note too long]`.
-
----
-
 ## 5. Settings reference
 
 After running through all flows, `~/.agent_settings.json` contains:
@@ -489,14 +448,14 @@ Top-level Slack keys are preserved at every step.
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `gateway not reachable at ...` | gateway not running, wrong URL/port | `npm run dev` in `src/phantom/whatsapp` |
+| `gateway not reachable at ...` | gateway not running, wrong URL/port | `npm run dev` in `src/phantom/whatsapp_gateway` |
 | `unauthorized` (401) | missing/wrong token | pass `--gateway-token` or set `WHATSAPP_GATEWAY_TOKEN` |
 | `not_linked` (409) | gateway up but no live WA session | rerun `onboard`; scan QR |
 | `destination not in WHATSAPP_ALLOWED_TO` | dest not allowlisted | add to `WHATSAPP_ALLOWED_TO` on the **gateway** and restart |
 | `group_create_disabled` (403) | gateway env missing flag | restart gateway with `WHATSAPP_ALLOW_GROUP_CREATE=1` |
 | `use either --to (DM) or a group flag` | mixed DM + group on `say` | pick one target mode |
 | `no last_group_jid in settings` | `say --group last` before create | run `group create` first |
-| QR never appears | gateway logged out or auth dir corrupted | stop gateway, `rm -rf src/phantom/whatsapp/auth/default`, restart |
+| QR never appears | gateway logged out or auth dir corrupted | stop gateway, `rm -rf src/phantom/whatsapp_gateway/auth/default`, restart |
 | `no new messages` after restart | inbox is in-memory, cleared on restart | not a bug; or enable `WHATSAPP_SYNC_FULL_HISTORY=1` (see §3f) |
 | `cursor reset (gateway inbox restarted)` after restart | gateway `inbox_epoch` differs from persisted | expected — CLI re-reads from `since=0` automatically |
 | `WHATSAPP_SYNC_FULL_HISTORY=1` set, but `latest_seq=0` after restart | auth dir was paired before sync was enabled; WA won't re-bootstrap | wipe `auth/default` and re-link (§3f Runbook A) |
