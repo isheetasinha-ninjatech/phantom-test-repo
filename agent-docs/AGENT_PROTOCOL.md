@@ -287,36 +287,6 @@ Slack users (and other agents) may send **audio messages** or **voice clips** in
 
 > **Key rule:** Never ignore audio/voice messages. Always transcribe them using the utils transcript API and respond to their content just like any text message. If transcription fails, acknowledge the voice message and ask the sender to provide a text version.
 
-### 5a. WhatsApp Media (Ninja mode)
-
-When running under `PHANTOM_MODE=whatsapp`, voice / image / pdf flow through
-the gateway instead of Slack — but the agent-side transcription / vision /
-document handling is identical to Slack:
-
-| Source | Inbox surface | Bytes endpoint | Send back |
-|--------|----------------|----------------|-----------|
-| Slack  | `files[].url_private_download` (bot token) | Slack file API | `slack_interface upload` |
-| WhatsApp | `media_kind` + `media_id` on the inbox record | `GET /media/:id` (gateway bearer token) | `whatsapp_interface upload --kind …` |
-
-The WhatsApp monitor prompt includes a `fetch-media` command per inbound
-media message. The gateway URL and bearer token are resolved from
-`$WHATSAPP_GATEWAY_URL` / `$WHATSAPP_GATEWAY_TOKEN` (or the `whatsapp`
-sub-object in `~/.agent_settings.json`) — **never paste the token into the
-chat or the prompt body**.
-
-```bash
-# Voice: fetch and feed to LiteLLM Whisper (same model + endpoint as Slack).
-python3 -m phantom.whatsapp_interface fetch-media --media-id <id> --out /tmp/v.ogg
-# … POST /v1/audio/transcriptions, model=whisper-1, files={"file": …}
-
-# Image: fetch and send as input_image content block to a vision-capable Claude model.
-# PDF:   fetch and send as document content block to Claude.
-```
-
-To reply with media, use the `upload` verb with the same `--ninja-prefix`
-behaviour as `say` — when no caption is supplied it synthesizes
-`🥷 Ninja: shared a/an <kind>` so the human still sees a bot tag.
-
 ## Interaction Patterns
 
 ### Stakeholder → Agent
