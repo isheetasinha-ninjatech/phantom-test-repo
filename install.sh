@@ -7,11 +7,11 @@
 # What this does:
 #   1. Installs Python dependencies (requirements.txt)
 #   2. Creates the logs directory
-#   3. Configures Slack channel (agent is always 'phantom')
+#   3. Configures Teams channel (agent is always 'phantom')
 #   4. Installs and enables phantom-sync.service, phantom.service, phantom-monitor.service, phantom-dashboard.service, and phantom-integrations.service
 #
 # Prerequisites (must be provided manually — not handled by this script):
-#   - s3_config.json at repo root or /root/  (AWS credentials for Slack S3 cache)
+#   - s3_config.json at repo root or /root/  (AWS credentials for Teams S3 cache)
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # --- Parse arguments --------------------------------------------------------
 TEAMS_ID=""
 CHANNEL_ID=""
-SLACK_AGENT="phantom"  # always phantom — only one agent in this repo
+Teams_AGENT="phantom"  # always phantom — only one agent in this repo
 
 usage() {
     echo "Usage: $0 --channel CHANNEL --channel-id CHANNEL_ID [--workspace-id WORKSPACE_ID]"
@@ -87,8 +87,8 @@ mkdir -p /workspace/logs
 echo "  ✓ Log directory ready (/workspace/logs)"
 
 # --- 2.5. Timezone ----------------------------------------------------------
-# Align the sandbox clock with the operator's Slack timezone so every
-# subsequent log line, cron tick, Slack message, and git commit happens
+# Align the sandbox clock with the operator's Teams timezone so every
+# subsequent log line, cron tick, Teams message, and git commit happens
 # in the human's local time. Non-blocking: we warn and continue on any
 # failure so install never aborts because of a clock-config hiccup.
 #
@@ -98,7 +98,7 @@ echo "  ✓ Log directory ready (/workspace/logs)"
 # packaging step skipped it and every deployed agent silently fell
 # back to Etc/UTC.
 echo ""
-echo "▶ Aligning system timezone with Slack user profile..."
+echo "▶ Aligning system timezone with Teams user profile..."
 TZ_SCRIPT="$SCRIPT_DIR/initial_setup_scripts/set_timezone.py"
 if [[ -f "$TZ_SCRIPT" ]]; then
     # Route stdout to /dev/null — we print our own one-line confirmation below.
@@ -117,7 +117,7 @@ fi
 echo ""
 echo "▶ Configuring Teams..."
 
-# Verify s3_config.json exists before invoking slack_interface.py
+# Verify s3_config.json exists before invoking Teams_interface.py
 S3_CONFIG_FOUND=false
 for candidate in "/root/s3_config.json" "$SCRIPT_DIR/s3_config.json" "/root/ninja-squad/s3_config.json" "/workspace/ninja-squad/s3_config.json"; do
     if [[ -f "$candidate" ]]; then
@@ -127,20 +127,26 @@ for candidate in "/root/s3_config.json" "$SCRIPT_DIR/s3_config.json" "/root/ninj
 done
 
 if [[ "$S3_CONFIG_FOUND" != "true" ]]; then
-    echo "  ⚠ s3_config.json not found — skipping Slack config (Teams mode)"
+    echo "  ✗ s3_config.json not found — cannot configure Teams"
+    echo "    Create s3_config.json (at repo root or /root/) with:"
+    echo "      aws_access_key_id, aws_secret_access_key, bucket_name"
+    echo "    Then re-run: $0 --channel '$Teams_CHANNEL'"
+    exit 1
 fi
 
-python "$SCRIPT_DIR/teams_interface.py" config --set-team-id "$TEAMS_ID" --set-channel-id "$CHANNEL_ID"
+TEAMS_ACCESS_TOKEN=$(grep '^MSTeams=' /dev/shm/mcp-token | sed 's/^MSTeams=//' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+python "$SCRIPT_DIR/teams_interface.py" config --set-team-id "$TEAMS_ID" --set-channel-id "$CHANNEL_ID" --set-access-token "$TEAMS_ACCESS_TOKEN"
 echo "  ✓ Teams team ID set to: $TEAMS_ID"
 echo "  ✓ Teams channel set to: $CHANNEL_ID"
+echo "  ✓ Teams access token set (${#TEAMS_ACCESS_TOKEN} chars)"
 
-# if [[ -n "$SLACK_WORKSPACE_ID" ]]; then
-#     python "$SCRIPT_DIR/slack_interface.py" config --set-workspace-id "$SLACK_WORKSPACE_ID"
-#     echo "  ✓ Slack workspace ID set to: $SLACK_WORKSPACE_ID"
+# if [[ -n "$Teams_WORKSPACE_ID" ]]; then
+#     python "$SCRIPT_DIR/Teams_interface.py" config --set-workspace-id "$Teams_WORKSPACE_ID"
+#     echo "  ✓ Teams workspace ID set to: $Teams_WORKSPACE_ID"
 # fi
 
-# python "$SCRIPT_DIR/slack_interface.py" config --set-agent "$SLACK_AGENT"
-# echo "  ✓ Slack agent set to: $SLACK_AGENT (phantom)"
+# python "$SCRIPT_DIR/Teams_interface.py" config --set-agent "$Teams_AGENT"
+# echo "  ✓ Teams agent set to: $Teams_AGENT (phantom)"
 
 # --- 4. Systemd services ----------------------------------------------------
 echo ""
