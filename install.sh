@@ -130,7 +130,7 @@ if [[ "$S3_CONFIG_FOUND" != "true" ]]; then
     echo "  ✗ s3_config.json not found — cannot configure Teams"
     echo "    Create s3_config.json (at repo root or /root/) with:"
     echo "      aws_access_key_id, aws_secret_access_key, bucket_name"
-    echo "    Then re-run: $0 --channel '$Teams_CHANNEL'"
+    echo "    Then re-run: $0 --channel '$CHANNEL_ID'"
     exit 1
 fi
 
