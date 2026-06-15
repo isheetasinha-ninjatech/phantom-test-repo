@@ -63,5 +63,5 @@ else
 fi
 
 # Clean and output the result (remove ANSI codes, OSC sequences, and control chars)
-cat "$TMPFILE" | tr -d '\r' | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g; s/\x1b\[[?][0-9]*[a-zA-Z]//g; s/\x1b\[<u//g; s/\x1b\][0-9]*;[^\x07]*\x07//g'
+perl -pe 's/\r//g; s/\e\[[0-?]*[ -\/]*[@-~]//g; s/\e\][^\a]*(?:\a|\e\\)//g; s/\e[\(\)][A-Za-z0-9]//g; s/\e[78]//g; s/\e[ -\/]*[@-~]//g; s/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]//g' "$TMPFILE"
 exit "$SCRIPT_STATUS"

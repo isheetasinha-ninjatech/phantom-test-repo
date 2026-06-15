@@ -580,7 +580,7 @@ def get_agent_from_config() -> dict:
         _early_logger.error(f"Config file: {CONFIG_PATH}")
         _early_logger.error("")
         _early_logger.error("💡 To configure your agent, run:")
-        _early_logger.error("   python slack_interface.py config --set-agent nova")
+        _early_logger.error("   python teams_interface.py config --set-agent nova")
         _early_logger.error("")
         _early_logger.error(f"🤖 Available agents: {', '.join(AGENTS.keys())}")
         sys.exit(1)
@@ -591,7 +591,7 @@ def get_agent_from_config() -> dict:
         _early_logger.error(f"💡 Valid agents: {', '.join(AGENTS.keys())}")
         _early_logger.error("")
         _early_logger.error("💡 To fix, run:")
-        _early_logger.error("   python slack_interface.py config --set-agent nova")
+        _early_logger.error("   python teams_interface.py config --set-agent nova")
         sys.exit(1)
 
     return AGENTS[agent_id]
@@ -615,7 +615,7 @@ def build_prompt(agent: dict, task: str = "") -> str:
     channel = config.get(
         "default_channel_name", config.get("default_channel", "#your-channel")
     )
-    default_task = f"Check Slack {channel} for new requests, do your work, update your memory file and reflect and improve your toolkit as per agent-docs/ORCHESTRATOR.md."
+    default_task = f"Check Teams {channel} for new requests, do your work, update your memory file and reflect and improve your toolkit as per agent-docs/ORCHESTRATOR.md."
 
     memory = read_file(REPO_ROOT / "memory" / f"{agent['name'].lower()}_memory.md")
 
@@ -634,7 +634,7 @@ You are currently running as the orchestrator agent. Before starting work, read 
 
 1. **Your Specification:** `cat agent-docs/PHANTOM_SPEC.md`
 2. **Agent Protocol:** `cat agent-docs/AGENT_PROTOCOL.md`
-3. **Slack Interface Docs:** `cat agent-docs/SLACK_INTERFACE.md`
+3. **Teams Interface Docs:** `cat agent-docs/TEAMS_INTERFACE.md`
 4. **Workflow Docs:** `cat agent-docs/ORCHESTRATOR.md`
 5. **Pipedream Integrations:** `cat agent-docs/PIPEDREAM_CONNECT.md` — connected app discovery, OAuth dashboard, and `tools/pdx.py` (`pdx`) CLI tools
 
@@ -755,14 +755,14 @@ def run_capability_tests() -> bool:
     # Test 4: Project Files
     test_logger.info("\n📋 Test 4: Project Files")
     required_files = [
-        "slack_interface.py",
+        "teams_interface.py",
         "browser_interface.py",
         "phantom/browser_server.py",
         "phantom/observer.py",
         "phantom/actions.py",
         "agent-docs/PHANTOM_SPEC.md",
         "agent-docs/AGENT_PROTOCOL.md",
-        "agent-docs/SLACK_INTERFACE.md",
+        "agent-docs/TEAMS_INTERFACE.md",
         "agent-docs/PIPEDREAM_CONNECT.md",
         "memory",
     ]
@@ -815,7 +815,7 @@ Examples:
 
 Configuration:
   Agent identity is read from ~/.agent_settings.json
-  Set with: python slack_interface.py config --set-agent phantom
+  Set with: python teams_interface.py config --set-agent phantom
         """,
     )
     parser.add_argument("--task", "-t", default="", help="Specific task for the agent")
@@ -844,7 +844,7 @@ Configuration:
             list_logger.info(f"📌 Currently configured: {current}")
         else:
             list_logger.warning(
-                "⚠️  No agent configured. Run: python slack_interface.py config --set-agent <name>"
+                "⚠️  No agent configured. Run: python teams_interface.py config --set-agent <name>"
             )
         list_logger.info("")
         return
@@ -920,7 +920,7 @@ Configuration:
     # will re-invoke it for the next cycle.
     work_task = (
         args.task
-        or "Check Slack for new requests, do your work, update your memory file."
+        or "Check Teams for new requests, do your work, update your memory file."
     )
     logger.info(f"🚀 Running work cycle: {work_task}")
     run_agent(agent, work_task)

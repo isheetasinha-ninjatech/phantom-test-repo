@@ -126,14 +126,6 @@ for candidate in "/root/s3_config.json" "$SCRIPT_DIR/s3_config.json" "/root/ninj
     fi
 done
 
-if [[ "$S3_CONFIG_FOUND" != "true" ]]; then
-    echo "  ✗ s3_config.json not found — cannot configure Teams"
-    echo "    Create s3_config.json (at repo root or /root/) with:"
-    echo "      aws_access_key_id, aws_secret_access_key, bucket_name"
-    echo "    Then re-run: $0 --channel '$CHANNEL_ID'"
-    exit 1
-fi
-
 TEAMS_ACCESS_TOKEN=$(grep '^MSTeams=' /dev/shm/mcp-token | sed 's/^MSTeams=//' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 python "$SCRIPT_DIR/teams_interface.py" config --set-team-id "$TEAMS_ID" --set-channel-id "$CHANNEL_ID" --set-access-token "$TEAMS_ACCESS_TOKEN"
 echo "  ✓ Teams team ID set to: $TEAMS_ID"

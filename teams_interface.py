@@ -24,7 +24,9 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import mimetypes
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -58,7 +60,7 @@ MCP_TOKEN_KEYS = (
     "Microsoft Teams",
     "MicrosoftTeams",
     "MS Teams",
-    "MSTeams"
+    "MSTeams",
     "Teams",
     "microsoft_teams",
     "Microsoft Graph",
@@ -196,6 +198,30 @@ class TeamsDestination:
         return (
             f"/teams/{_quote(self.team_id)}/channels/{_quote(self.channel_id)}"
             f"/messages/{_quote(message_id)}/replies"
+        )
+
+    def reaction_path(self, message_id: str, reply_to_id: Optional[str] = None) -> str:
+        if self.kind == "chat":
+            return (
+                f"/chats/{_quote(self.chat_id)}/messages/{_quote(message_id)}"
+                f"/setReaction"
+            )
+        if reply_to_id and reply_to_id != message_id:
+            return (
+                f"/teams/{_quote(self.team_id)}/channels/{_quote(self.channel_id)}"
+                f"/messages/{_quote(reply_to_id)}/replies/{_quote(message_id)}/setReaction"
+            )
+        return (
+            f"/teams/{_quote(self.team_id)}/channels/{_quote(self.channel_id)}"
+            f"/messages/{_quote(message_id)}/setReaction"
+        )
+
+    def files_folder_path(self) -> str:
+        if self.kind != "channel":
+            raise TeamsConfigError("Teams file upload currently requires channel mode")
+        return (
+            f"/teams/{_quote(self.team_id)}/channels/"
+            f"{_quote(self.channel_id)}/filesFolder"
         )
 
 
@@ -443,6 +469,37 @@ def graph_request(
         return 0, {"error": "connection_failed", "detail": str(e.reason)}, {}
 
 
+def graph_request_bytes(
+    method: str,
+    path_or_url: str,
+    *,
+    token: str,
+    data: bytes,
+    content_type: str = "application/octet-stream",
+    timeout: float = 60.0,
+) -> tuple[int, Any, dict[str, str]]:
+    if path_or_url.startswith("https://"):
+        url = path_or_url
+    else:
+        url = f"{GRAPH_BASE_URL.rstrip('/')}/{path_or_url.lstrip('/')}"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Content-Type": content_type or "application/octet-stream",
+    }
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+            return resp.status, _decode_json(raw), dict(resp.headers)
+    except urllib.error.HTTPError as e:
+        raw = e.read()
+        return e.code, _decode_json(raw), dict(e.headers or {})
+    except urllib.error.URLError as e:
+        return 0, {"error": "connection_failed", "detail": str(e.reason)}, {}
+
+
 def _decode_json(raw: bytes) -> Any:
     if not raw:
         return {}
@@ -466,6 +523,112 @@ def _message_body(message: str, *, is_html: bool = False) -> dict[str, Any]:
             "content": message if is_html else text_to_teams_html(message),
         }
     }
+
+
+def _guess_content_type(filename: str, fallback: Optional[str] = None) -> str:
+    guessed, _ = mimetypes.guess_type(filename)
+    return fallback or guessed or "application/octet-stream"
+
+
+def _guess_audio_content_type(filename: str, fallback: Optional[str] = None) -> str:
+    if fallback:
+        return fallback
+    content_type = _guess_content_type(filename)
+    if Path(filename).suffix.lower() == ".webm" and content_type == "video/webm":
+        return "audio/webm"
+    return content_type
+
+
+def _is_audio_content_type(content_type: str) -> bool:
+    return (content_type or "").lower().startswith("audio/")
+
+
+def _safe_upload_name(filename: str) -> str:
+    name = Path(filename or "attachment").name.strip()
+    return name or "attachment"
+
+
+def message_with_emojis(message: str, emojis: Optional[list[str]] = None) -> str:
+    suffix = " ".join(
+        str(emoji).strip() for emoji in (emojis or []) if str(emoji).strip()
+    )
+    if not suffix:
+        return message
+    return f"{message} {suffix}".strip()
+
+
+REACTION_ALIASES = {
+    "like": "like",
+    "thumbs up": "like",
+    "thumbsup": "like",
+    "+1": "like",
+    "haha": "laugh",
+    "laugh": "laugh",
+    "laughing": "laugh",
+    "lol": "laugh",
+    "heart": "heart",
+    "love": "heart",
+    "cry": "sad",
+    "crying": "sad",
+    "tears": "sad",
+    "sad": "sad",
+    "angry": "angry",
+    "mad": "angry",
+    "surprised": "surprised",
+    "wow": "surprised",
+}
+
+
+def normalize_reaction_type(reaction: str) -> str:
+    text = str(reaction or "").strip()
+    if not text:
+        return "✅"
+    lowered = text.lower().strip(":")
+    return REACTION_ALIASES.get(lowered, text)
+
+
+def reaction_type_from_text(text: str) -> Optional[str]:
+    lowered = f" {str(text or '').lower()} "
+    for alias, reaction in sorted(
+        REACTION_ALIASES.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        if re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", lowered):
+            return reaction
+    return None
+
+
+def message_with_file_links(
+    message: str,
+    uploaded_files: list[dict[str, Any]],
+    *,
+    is_html: bool = False,
+) -> str:
+    files = [
+        item
+        for item in uploaded_files
+        if isinstance(item, dict) and (item.get("webUrl") or item.get("web_url"))
+    ]
+    if not files:
+        return message
+
+    if is_html:
+        links = []
+        for item in files:
+            url = html.escape(str(item.get("webUrl") or item.get("web_url") or ""))
+            name = html.escape(str(item.get("name") or url))
+            links.append(f'<a href="{url}">{name}</a>')
+        separator = "<br><br>" if message else ""
+        return f"{message}{separator}" + "<br>".join(links)
+
+    lines = [message] if message else []
+    lines.append("")
+    for item in files:
+        url = str(item.get("webUrl") or item.get("web_url") or "")
+        name = str(item.get("name") or url)
+        lines.append(f"{name}: {url}")
+    return "\n".join(lines).strip()
 
 
 def _pick_destination(config: TeamsConfig, args: argparse.Namespace) -> TeamsDestination:
@@ -571,6 +734,102 @@ class TeamsInterface:
         )
         return _ensure_ok(status, payload)
 
+    def react(
+        self,
+        message_id: str,
+        *,
+        reaction_type: str = "✅",
+        reply_to_id: Optional[str] = None,
+        destination: Optional[TeamsDestination] = None,
+    ) -> dict[str, Any]:
+        destination = destination or self.destination()
+        path = destination.reaction_path(message_id, reply_to_id=reply_to_id)
+        status, payload, _ = graph_request(
+            "POST",
+            path,
+            token=self.token,
+            body={"reactionType": normalize_reaction_type(reaction_type)},
+        )
+        _ensure_ok(status, payload)
+        return {
+            "ok": True,
+            "message_id": message_id,
+            "reply_to_id": reply_to_id,
+            "reaction_type": normalize_reaction_type(reaction_type),
+        }
+
+    def upload_bytes_to_channel(
+        self,
+        filename: str,
+        content: bytes,
+        *,
+        content_type: Optional[str] = None,
+        destination: Optional[TeamsDestination] = None,
+    ) -> dict[str, Any]:
+        destination = destination or self.destination()
+        if destination.kind != "channel":
+            raise TeamsConfigError("Teams file upload currently requires channel mode")
+
+        status, payload, _ = graph_request(
+            "GET",
+            destination.files_folder_path(),
+            token=self.token,
+        )
+        folder = _ensure_ok(status, payload)
+        parent = folder.get("parentReference") if isinstance(folder, dict) else {}
+        drive_id = parent.get("driveId") if isinstance(parent, dict) else None
+        folder_id = folder.get("id") if isinstance(folder, dict) else None
+        if not (drive_id and folder_id):
+            raise TeamsAPIError(status, folder)
+
+        upload_name = _safe_upload_name(filename)
+        upload_path = (
+            f"/drives/{_quote(str(drive_id))}/items/{_quote(str(folder_id))}:/"
+            f"{urllib.parse.quote(upload_name, safe='')}:/content"
+        )
+        status, payload, _ = graph_request_bytes(
+            "PUT",
+            upload_path,
+            token=self.token,
+            data=content,
+            content_type=_guess_content_type(upload_name, content_type),
+        )
+        return _ensure_ok(status, payload)
+
+    def upload_file_to_channel(
+        self,
+        path: str,
+        *,
+        content_type: Optional[str] = None,
+        destination: Optional[TeamsDestination] = None,
+        require_audio: bool = False,
+    ) -> dict[str, Any]:
+        file_path = Path(path).expanduser()
+        if not file_path.exists():
+            raise TeamsConfigError(f"file does not exist: {file_path}")
+        if not file_path.is_file():
+            raise TeamsConfigError(f"not a file: {file_path}")
+        resolved_content_type = (
+            _guess_audio_content_type(file_path.name, content_type)
+            if require_audio
+            else _guess_content_type(file_path.name, content_type)
+        )
+        if require_audio and not _is_audio_content_type(resolved_content_type):
+            raise TeamsConfigError(
+                f"audio upload requires an audio/* content type; got "
+                f"{resolved_content_type} for {file_path.name}"
+            )
+        try:
+            content = file_path.read_bytes()
+        except OSError as e:
+            raise TeamsConfigError(f"could not read file {file_path}: {e}") from e
+        return self.upload_bytes_to_channel(
+            file_path.name,
+            content,
+            content_type=resolved_content_type,
+            destination=destination,
+        )
+
     def get_messages(
         self,
         *,
@@ -582,6 +841,29 @@ class TeamsInterface:
         status, payload, _ = graph_request(
             "GET",
             destination.messages_path(),
+            token=self.token,
+            query={"$top": top},
+        )
+        payload = _ensure_ok(status, payload)
+        items = payload.get("value") if isinstance(payload, dict) else []
+        if not isinstance(items, list):
+            return []
+        return [normalize_message(x) for x in items if isinstance(x, dict)]
+
+    def get_replies(
+        self,
+        parent_message_id: str,
+        *,
+        destination: Optional[TeamsDestination] = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        destination = destination or self.destination()
+        if destination.kind != "channel":
+            return []
+        top = max(1, min(int(limit), 50))
+        status, payload, _ = graph_request(
+            "GET",
+            destination.reply_path(parent_message_id),
             token=self.token,
             query={"$top": top},
         )
@@ -722,8 +1004,25 @@ def cmd_say(args: argparse.Namespace) -> int:
             access_token=args.access_token, config_file=args.config_file
         )
         destination = _pick_destination(client.config, args)
+        uploaded_files = [
+            client.upload_file_to_channel(
+                path,
+                destination=destination,
+                require_audio=require_audio,
+            )
+            for require_audio, paths in (
+                (False, args.attach_file or []),
+                (True, args.attach_audio or []),
+            )
+            for path in paths
+        ]
+        message = message_with_emojis(args.message, args.emoji)
         result = client.say(
-            args.message,
+            message_with_file_links(
+                message,
+                uploaded_files,
+                is_html=args.html,
+            ),
             destination=destination,
             reply_to=args.reply_to,
             is_html=args.html,
@@ -731,6 +1030,63 @@ def cmd_say(args: argparse.Namespace) -> int:
     except (TeamsConfigError, TeamsAPIError) as e:
         sys.stderr.write(f"send failed: {e}\n")
         return 2 if isinstance(e, TeamsConfigError) else 1
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_upload(args: argparse.Namespace) -> int:
+    try:
+        client = TeamsInterface(
+            access_token=args.access_token, config_file=args.config_file
+        )
+        destination = _pick_destination(client.config, args)
+        uploaded = client.upload_file_to_channel(
+            args.file,
+            content_type=args.content_type,
+            destination=destination,
+            require_audio=args.audio,
+        )
+        message = message_with_emojis(
+            args.message or f"Uploaded {uploaded.get('name') or Path(args.file).name}",
+            args.emoji,
+        )
+        sent = client.say(
+            message_with_file_links(message, [uploaded], is_html=args.html),
+            destination=destination,
+            reply_to=args.reply_to,
+            is_html=args.html,
+        )
+    except (TeamsConfigError, TeamsAPIError) as e:
+        sys.stderr.write(f"upload failed: {e}\n")
+        return 2 if isinstance(e, TeamsConfigError) else 1
+
+    print(json.dumps({"upload": uploaded, "message": sent}, indent=2))
+    return 0
+
+
+def cmd_audio(args: argparse.Namespace) -> int:
+    args.audio = True
+    if not args.content_type:
+        args.content_type = _guess_audio_content_type(args.file)
+    return cmd_upload(args)
+
+
+def cmd_react(args: argparse.Namespace) -> int:
+    try:
+        client = TeamsInterface(
+            access_token=args.access_token, config_file=args.config_file
+        )
+        destination = _pick_destination(client.config, args)
+        result = client.react(
+            args.message_id,
+            reaction_type=args.reaction,
+            reply_to_id=args.reply_to,
+            destination=destination,
+        )
+    except (TeamsConfigError, TeamsAPIError) as e:
+        sys.stderr.write(f"reaction failed: {e}\n")
+        return 2 if isinstance(e, TeamsConfigError) else 1
+
     print(json.dumps(result, indent=2))
     return 0
 
@@ -865,7 +1221,83 @@ def build_parser() -> argparse.ArgumentParser:
     p_say.add_argument(
         "--html", action="store_true", help="send message as raw Teams HTML"
     )
+    p_say.add_argument(
+        "--attach-file",
+        action="append",
+        help="upload a local file to the Teams channel Files folder and include its link",
+    )
+    p_say.add_argument(
+        "--attach-audio",
+        action="append",
+        help="upload a local audio file and include its link",
+    )
+    p_say.add_argument(
+        "--emoji",
+        action="append",
+        help="append a native Unicode emoji to the message; can be repeated",
+    )
     p_say.set_defaults(func=cmd_say)
+
+    p_upload = sub.add_parser("upload", help="upload a file and post its Teams link")
+    p_upload.add_argument("file")
+    p_upload.add_argument("--team-id")
+    p_upload.add_argument("--channel-id")
+    p_upload.add_argument("--chat-id")
+    p_upload.add_argument("-m", "--message", help="message to post with the file link")
+    p_upload.add_argument("--reply-to", help="channel message id to reply to")
+    p_upload.add_argument(
+        "--html", action="store_true", help="send message as raw Teams HTML"
+    )
+    p_upload.add_argument(
+        "--content-type",
+        help="override detected content type, for example audio/webm",
+    )
+    p_upload.add_argument(
+        "--audio",
+        action="store_true",
+        help="require the uploaded file to resolve to an audio/* content type",
+    )
+    p_upload.add_argument(
+        "--emoji",
+        action="append",
+        help="append a native Unicode emoji to the message; can be repeated",
+    )
+    p_upload.set_defaults(func=cmd_upload)
+
+    p_audio = sub.add_parser(
+        "audio", help="upload an audio file and post its Teams link"
+    )
+    p_audio.add_argument("file")
+    p_audio.add_argument("--team-id")
+    p_audio.add_argument("--channel-id")
+    p_audio.add_argument("--chat-id")
+    p_audio.add_argument("-m", "--message", help="message to post with the audio link")
+    p_audio.add_argument("--reply-to", help="channel message id to reply to")
+    p_audio.add_argument(
+        "--html", action="store_true", help="send message as raw Teams HTML"
+    )
+    p_audio.add_argument(
+        "--content-type",
+        help="override detected content type, for example audio/webm",
+    )
+    p_audio.add_argument(
+        "--emoji",
+        action="append",
+        help="append a native Unicode emoji to the message; can be repeated",
+    )
+    p_audio.set_defaults(func=cmd_audio)
+
+    p_react = sub.add_parser("react", help="add an emoji reaction to a Teams message")
+    p_react.add_argument("message_id")
+    p_react.add_argument("reaction", nargs="?", default="✅")
+    p_react.add_argument("--team-id")
+    p_react.add_argument("--channel-id")
+    p_react.add_argument("--chat-id")
+    p_react.add_argument(
+        "--reply-to",
+        help="parent channel message id when reacting to a thread reply",
+    )
+    p_react.set_defaults(func=cmd_react)
 
     p_read = sub.add_parser("read", help="read recent Teams messages")
     p_read.add_argument("--team-id")
